@@ -1,0 +1,185 @@
+{
+  "model_name": "HistGradientBoostingRegressor",
+  "metrics": {
+    "holdout": {
+      "mae": 0.08030148959783999,
+      "baseline_mae": 0.08578500363750383,
+      "r2": 0.06426074889851108,
+      "spearman": 0.43917387175387146,
+      "top10pct_risk_capture": 0.23601433785999246,
+      "poisson_deviance": 0.17085555252822074,
+      "baseline_poisson_deviance": 0.19308542699150125,
+      "d2_poisson": 0.11512973718238695,
+      "n_rows": 219312
+    },
+    "spatial_cv": {
+      "mae": {
+        "mean": 0.0850747514056308,
+        "std": 0.0031783130234569698
+      },
+      "baseline_mae": {
+        "mean": 0.08799199362131324,
+        "std": 0.00376866067366156
+      },
+      "r2": {
+        "mean": 0.03939404967010156,
+        "std": 0.03159384917203796
+      },
+      "spearman": {
+        "mean": 0.3661847324156121,
+        "std": 0.07675071499371014
+      },
+      "top10pct_risk_capture": {
+        "mean": 0.2135397289077631,
+        "std": 0.01935235913474966
+      },
+      "poisson_deviance": {
+        "mean": 0.1862180155985844,
+        "std": 0.01358555156940823
+      },
+      "baseline_poisson_deviance": {
+        "mean": 0.202806299725716,
+        "std": 0.01695182027232985
+      },
+      "d2_poisson": {
+        "mean": 0.07952751022867055,
+        "std": 0.049531045023994906
+      }
+    }
+  },
+  "importances": {
+    "road_type_ord": 0.05525913019826282,
+    "query_hour": 0.0503787338224605,
+    "log_length": 0.042534511414923704,
+    "darkness_hazard": 0.022703871105054414,
+    "distance_to_nearest_police": 0.006193343237324123,
+    "degree_of_connectivity": 0.004875412553429233,
+    "is_night": 0.0004696870200410948,
+    "active_open_shops_estimate": -0.0005095147037140757,
+    "commercial_poi_count": -0.0005864591398076676,
+    "isolation_index": -0.0032926719761191916
+  },
+  "risk_thresholds": {
+    "elevated": 0.0864116310440211,
+    "high": 0.11739107101970192,
+    "median": 0.04505465458615511
+  },
+  "notes": [],
+  "training": {
+    "trained_at": "2026-10-18T05:04:49+00:00",
+    "seed": 42,
+    "csv": [
+      "FINAL_CRIME_DATASET.csv",
+      "bglr_standardized.csv"
+    ],
+    "n_rows": 1046904,
+    "n_incidents": 3312,
+    "kernel_sigma_m": 90.0,
+    "kernel_cutoff_sigmas": 2.5,
+    "kernel_normalized": false,
+    "target_exposure": "log1p(max(L,50))/log1p(100)",
+    "loss": "poisson",
+    "coverage_m": 750.0,
+    "zero_keep": 0.25,
+    "sklearn_version": "1.5.0",
+    "strict_interpersonal": true,
+    "ambient_floor": true,
+    "ambient_floor_share": 0.17368762625967904,
+    "commercial_normalisation": {
+      "k": 0.35,
+      "exponent": 0.85
+    },
+    "excluded_crimes": [
+      "2 wheeler theft",
+      "4 wheeler theft",
+      "damage to public property",
+      "mischief",
+      "ordinary theft",
+      "theft",
+      "vehicle theft"
+    ],
+    "n_time_unknown": 443,
+    "edges_total": 120652,
+    "edges_covered": 69518,
+    "edges_with_incidents": 34987,
+    "incidents_matched": 1610
+  },
+  "monotonic_constraints": {
+    "commercial_poi_count": -1,
+    "active_open_shops_estimate": -1,
+    "distance_to_nearest_police": 1,
+    "degree_of_connectivity": -1,
+    "isolation_index": 1,
+    "darkness_hazard": 1
+  },
+  "hour_profile": {
+    "0": 0.0911184059986097,
+    "1": 0.07693676554439688,
+    "2": 0.06739045550872877,
+    "3": 0.06192530466495038,
+    "4": 0.05627912676172074,
+    "5": 0.0516074996826863,
+    "6": 0.030882053740992482,
+    "7": 0.023991419325831854,
+    "8": 0.023864586183116317,
+    "9": 0.023997149714219904,
+    "10": 0.029659520251151712,
+    "11": 0.029665933627439803,
+    "12": 0.03094800720029194,
+    "13": 0.030538813132245938,
+    "14": 0.031184565193156932,
+    "15": 0.03576148684691787,
+    "16": 0.04093568602945027,
+    "17": 0.049687013927990534,
+    "18": 0.059890240885012096,
+    "19": 0.08647570354606836,
+    "20": 0.1081580665998672,
+    "21": 0.12214816953885971,
+    "22": 0.11861251705665589,
+    "23": 0.11140816886551594
+  },
+  "archetypes": {
+    "0": {
+      "name": "Low-Risk Dispute",
+      "size": 1606,
+      "mean_severity": 3.959,
+      "night_share": 0.272,
+      "mean_police_km": 1.665,
+      "top_categories": {
+        "assault": 1274,
+        "chain snatching": 248,
+        "hurt": 65,
+        "intimidation & annoyance": 17,
+        "extortion": 2
+      }
+    },
+    "1": {
+      "name": "Property/Nuisance Risk",
+      "size": 1010,
+      "mean_severity": 4.485,
+      "night_share": 0.382,
+      "mean_police_km": 1.592,
+      "top_categories": {
+        "kidnap": 407,
+        "robbery": 299,
+        "attempted murder": 213,
+        "hurt": 77,
+        "wrongful restraint and confinement": 10
+      }
+    },
+    "2": {
+      "name": "Violent Physical Threat (night-skewed)",
+      "size": 253,
+      "mean_severity": 4.999,
+      "night_share": 0.494,
+      "mean_police_km": 1.883,
+      "top_categories": {
+        "murder": 110,
+        "rape": 51,
+        "offences affecting life": 46,
+        "robbery and dacoity": 25,
+        "kidnapping": 12
+      }
+    }
+  }
+}

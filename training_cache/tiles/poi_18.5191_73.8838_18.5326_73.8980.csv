@@ -1,0 +1,3 @@
+osm_type,osm_id,lat,lon,amenity,shop
+node,10246271662,18.5273101,73.8977851,,photo
+node,14002659922,18.5322847,73.8972726,cafe,coffee

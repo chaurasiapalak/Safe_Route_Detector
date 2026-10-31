@@ -1,0 +1,168 @@
+{
+  "reference": "hold-out sample (60,000 rows)",
+  "holdout": {
+    "mae": 0.07745021730315128,
+    "baseline_mae": 0.08279330377394462,
+    "r2": 0.10939840894869679,
+    "spearman": 0.4907897735461927,
+    "top10pct_risk_capture": 0.2962296527166818,
+    "n_rows": 60000
+  },
+  "spatial_cv": {
+    "mae": {
+      "mean": 0.0850747514056308,
+      "std": 0.0031783130234569698
+    },
+    "baseline_mae": {
+      "mean": 0.08799199362131324,
+      "std": 0.00376866067366156
+    },
+    "r2": {
+      "mean": 0.03939404967010156,
+      "std": 0.03159384917203796
+    },
+    "spearman": {
+      "mean": 0.3661847324156121,
+      "std": 0.07675071499371014
+    },
+    "top10pct_risk_capture": {
+      "mean": 0.2135397289077631,
+      "std": 0.01935235913474966
+    },
+    "poisson_deviance": {
+      "mean": 0.1862180155985844,
+      "std": 0.01358555156940823
+    },
+    "baseline_poisson_deviance": {
+      "mean": 0.202806299725716,
+      "std": 0.01695182027232985
+    },
+    "d2_poisson": {
+      "mean": 0.07952751022867055,
+      "std": 0.049531045023994906
+    }
+  },
+  "importances": {
+    "road_type_ord": 0.07148212513956723,
+    "log_length": 0.07510236098870138,
+    "commercial_poi_count": 0.0020393823812008714,
+    "active_open_shops_estimate": 0.00015595139191781904,
+    "distance_to_nearest_police": 0.023297156941316576,
+    "degree_of_connectivity": 0.008883625228348712,
+    "query_hour": 0.0710827302967482,
+    "is_night": 0.0015353411067714705,
+    "isolation_index": 0.000544363611983556,
+    "darkness_hazard": 0.04735636475608638
+  },
+  "feature_effects": {
+    "distance_to_nearest_police": {
+      "pdp_min": 0.022363608550746834,
+      "pdp_max": 0.07675799897612072,
+      "swing_vs_elevated_threshold": 0.6294799643078545,
+      "constraint": 1,
+      "monotone_violation": 0.0
+    },
+    "query_hour": {
+      "pdp_min": 0.024704393412634047,
+      "pdp_max": 0.12488696073824047,
+      "swing_vs_elevated_threshold": 1.1593643831878366,
+      "constraint": 0,
+      "monotone_violation": 0.0,
+      "night_vs_midday": 2.7623318492737723
+    },
+    "commercial_poi_count": {
+      "pdp_min": 0.0070533442097566075,
+      "pdp_max": 0.05975226507490971,
+      "swing_vs_elevated_threshold": 0.6098591153580522,
+      "constraint": -1,
+      "monotone_violation": 0.0
+    },
+    "degree_of_connectivity": {
+      "pdp_min": 0.05585647363907663,
+      "pdp_max": 0.06739285620766665,
+      "swing_vs_elevated_threshold": 0.13350497414766982,
+      "constraint": -1,
+      "monotone_violation": 0.0
+    },
+    "isolation_index": {
+      "pdp_min": 0.048774407993840356,
+      "pdp_max": 0.06277822050026485,
+      "swing_vs_elevated_threshold": 0.1620593470720448,
+      "constraint": 1,
+      "monotone_violation": 0.0
+    },
+    "darkness_hazard": {
+      "pdp_min": 0.06032458830487722,
+      "pdp_max": 0.08870480140395345,
+      "swing_vs_elevated_threshold": 0.32843047580734086,
+      "constraint": 1,
+      "monotone_violation": 0.0
+    }
+  },
+  "constraint_check": [
+    {
+      "feature": "commercial_poi_count",
+      "name": "Shops within 100 m",
+      "sign": -1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.0526989208651531,
+      "source": "plotted panel"
+    },
+    {
+      "feature": "active_open_shops_estimate",
+      "name": "Open shops (estimate)",
+      "sign": -1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.0021933720738712553,
+      "source": "extra sweep"
+    },
+    {
+      "feature": "distance_to_nearest_police",
+      "name": "Distance to nearest police station",
+      "sign": 1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.05439439042537389,
+      "source": "plotted panel"
+    },
+    {
+      "feature": "degree_of_connectivity",
+      "name": "Junction degree (connecting streets)",
+      "sign": -1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.01153638256859002,
+      "source": "plotted panel"
+    },
+    {
+      "feature": "isolation_index",
+      "name": "Isolation index (police km / junction degree)",
+      "sign": 1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.014003812506424497,
+      "source": "plotted panel"
+    },
+    {
+      "feature": "darkness_hazard",
+      "name": "Darkness hazard (night, no open shops)",
+      "sign": 1,
+      "violation": 0.0,
+      "ok": true,
+      "swing": 0.028380213099076235,
+      "source": "plotted panel"
+    }
+  ],
+  "population_shares": {
+    "low": 0.7992,
+    "elevated": 0.1102,
+    "high": 0.0906
+  },
+  "thresholds": {
+    "elevated": 0.0864116310440211,
+    "high": 0.11739107101970192,
+    "median": 0.04505465458615511
+  }
+}

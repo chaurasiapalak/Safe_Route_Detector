@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spatio-Temporal Safe Route Optimizer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <h1>&#128737;&#65039; Safe Route Optimizer</h1>
+      <button id="diag-btn" class="secondary" type="button">Model diagnostics</button>
+
+      <section class="panel">
+        <h2>1. Area</h2>
+        <label for="place-input">Place name</label>
+        <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
+        <label for="dist-input">Coverage radius (m)</label>
+        <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100">
+        <p class="hint">Larger radius = more ground covered (like a Google Maps
+          search area), but a slower first-time download and training pass.
+          Capped at 5000 m to keep the pedestrian network download and
+          model training practical.</p>
+        <button id="load-area-btn">Load Area</button>
+        <p id="area-status" class="status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>2. Locations</h2>
+        <label for="start-input">Start location</label>
+        <div class="input-row">
+          <input id="start-input" type="text" placeholder="Leave blank to use the area centre" disabled title="Load an area first">
+          <button id="set-start-btn" class="secondary" disabled title="Load an area first">Set</button>
+        </div>
+
+        <label for="dest-input">Destination</label>
+        <div class="input-row">
+          <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
+          <button id="set-dest-btn" class="secondary" disabled title="Load an area first">Set</button>
+        </div>
+        <p id="location-status" class="status"></p>
+      </section>
+
+      <section class="panel">
+        <h2>3. Route settings</h2>
+        <label for="hour-slider">Time of day: <span id="hour-value">12</span>:00</label>
+        <input id="hour-slider" type="range" min="0" max="23" value="12">
+        <p class="hint">Defaults to your device's current local hour. Move it to plan for a
+          different time -- the risk model runs entirely on hour-of-day patterns
+          (typical lighting/activity by hour), not live conditions, so "future" hours
+          are just as valid a query as "now".</p>
+
+        <label for="lambda-slider">Distance &harr; Safety (&lambda; = <span id="lambda-value">0.50</span>)</label>
+        <input id="lambda-slider" type="range" min="0" max="1" value="0.5" step="0.05">
+        <div class="slider-labels"><span>Safest</span><span>Shortest</span></div>
+
+        <button id="find-route-btn" disabled>Find Route</button>
+        <p id="route-status" class="status"></p>
+      </section>
+
+      <section class="panel" id="results-panel" style="display:none;">
+        <h2>4. Routes</h2>
+        <div class="route-row" id="row-shortest">
+          <span class="swatch" style="background:#f43f5e; color:#f43f5e;"></span>
+          <span class="route-name">Shortest</span>
+          <span class="metrics"></span>
+        </div>
+        <div class="route-row" id="row-balanced">
+          <span class="swatch" style="background:#eab308; color:#eab308;"></span>
+          <span class="route-name">Balanced</span>
+          <span class="metrics"></span>
+        </div>
+        <div class="route-row" id="row-safest">
+          <span class="swatch" style="background:#14b8a6; color:#14b8a6;"></span>
+          <span class="route-name">Safest</span>
+          <span class="metrics"></span>
+        </div>
+      </section>
+    </aside>
+
+    <div id="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='diagnostics.js') }}"></script>
+</body>
+</html>
