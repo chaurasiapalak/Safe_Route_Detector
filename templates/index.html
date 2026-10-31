@@ -1,91 +1,1068 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Spatio-Temporal Safe Route Optimizer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeRoute AI</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<!-- Leaflet.MiniMap -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.css">
+<!-- FontAwesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+  :root {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --brand: #3B82F6;
+    --brand-dark: #2563eb;
+    --shortest: #E11D48;   /* crimson */
+    --balanced: #F59E0B;   /* amber */
+    --safest: #10B981;     /* emerald */
+    --good: #10B981;
+    --warn: #F59E0B;
+    --bad: #E11D48;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(15, 23, 42, .12);
+    --sidebar-w: 410px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    color: var(--ink); background: var(--bg); font-size: 14px;
+  }
+  button { font-family: inherit; cursor: pointer; }
+
+  #app { display: flex; height: 100%; }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: var(--sidebar-w); min-width: var(--sidebar-w); height: 100%;
+    overflow-y: auto; padding: 18px; background: var(--bg);
+    border-right: 1px solid var(--line); z-index: 1000;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .brand .logo {
+    width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center;
+    color: #fff; font-size: 20px; background: linear-gradient(135deg, #3B82F6, #10B981);
+    box-shadow: 0 6px 16px rgba(59,130,246,.35);
+  }
+  .brand h1 { margin: 0; font-size: 20px; letter-spacing: -.3px; }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  }
+  .card h2 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px;
+  }
+  label { display: block; font-size: 12px; font-weight: 600; color: #334155; margin: 8px 0 4px; }
+  input[type=text], input[type=number] {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px;
+    font: inherit; background: #fff; color: var(--ink); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=text]:focus, input[type=number]:focus {
+    border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59,130,246,.18);
+  }
+  input:disabled { background: #f1f5f9; color: #94a3b8; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > input { flex: 1; min-width: 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 120px; gap: 8px; }
+
+  .btn {
+    border: 1px solid transparent; border-radius: 10px; padding: 9px 13px; font-weight: 600;
+    font-size: 13px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    transition: transform .08s, background .15s, box-shadow .15s, opacity .15s;
+  }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.primary { background: var(--brand); color: #fff; box-shadow: 0 6px 14px rgba(59,130,246,.3); }
+  .btn.primary:hover:not(:disabled) { background: var(--brand-dark); }
+  .btn.ghost { background: #fff; color: #334155; border-color: var(--line); }
+  .btn.ghost:hover:not(:disabled) { background: #f8fafc; }
+  .btn.block { width: 100%; margin-top: 10px; }
+  .btn.small { padding: 6px 10px; font-size: 12px; }
+
+  .status { margin: 8px 0 0; font-size: 12px; color: var(--muted); min-height: 1em; }
+  .status.ok { color: #047857; }
+  .status.err { color: #be123c; }
+  .status.warn { color: #b45309; }
+
+  /* ---------- Landmark pills ---------- */
+  .pills {
+    display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 8px; margin-top: 8px;
+    scrollbar-width: thin; scroll-snap-type: x proximity;
+  }
+  .pills::-webkit-scrollbar { height: 6px; }
+  .pills::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+  .pill {
+    flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap;
+    border: 1px solid var(--line); background: #fff; color: #1e293b; border-radius: 999px;
+    padding: 6px 12px; font-size: 12px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center;
+    transition: all .15s;
+  }
+  .pill i { color: var(--brand); font-size: 11px; }
+  .pill:hover { border-color: var(--brand); background: #eff6ff; transform: translateY(-1px); }
+  .pill.is-origin { background: #dbeafe; border-color: #93c5fd; }
+  .pill.is-dest { background: #ffe4e6; border-color: #fda4af; }
+  .pill-empty { color: var(--muted); font-size: 12px; padding: 6px 2px; }
+
+  .selection { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .sel-box { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 8px 10px; font-size: 12px; background: #fafcff; min-height: 52px; }
+  .sel-box b { display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .sel-box span { font-weight: 600; word-break: break-word; }
+
+  /* ---------- Sliders ---------- */
+  input[type=range] { width: 100%; accent-color: var(--brand); }
+  .slider-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .hint { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; line-height: 1.45; }
+
+  /* ---------- Route comparison ---------- */
+  .route-row {
+    display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center;
+    padding: 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px;
+    cursor: pointer; background: #fff; transition: all .15s;
+  }
+  .route-row:hover { border-color: #cbd5e1; box-shadow: 0 4px 12px rgba(15,23,42,.06); }
+  .route-row.active { border-color: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
+  .route-row .dot { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 22%, transparent); background: currentColor; }
+  .route-row .name { font-weight: 700; color: var(--ink); }
+  .route-row .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .route-row .meta i { width: 14px; }
+  .score-chip {
+    min-width: 54px; text-align: center; padding: 5px 9px; border-radius: 999px;
+    font-weight: 800; font-size: 13px; color: #fff;
+  }
+  .score-chip small { display: block; font-weight: 600; font-size: 9px; opacity: .9; letter-spacing: .06em; text-transform: uppercase; }
+  .insight {
+    margin-top: 4px; padding: 10px 12px; border-radius: 12px; font-size: 12.5px;
+    background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; display: none;
+  }
+  .warnings { margin-top: 8px; font-size: 12px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; display: none; }
+  .warnings div + div { margin-top: 4px; }
+
+  /* ---------- Diurnal chart ---------- */
+  .chart-wrap { position: relative; height: 170px; }
+  .diurnal-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .tag { font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: #f8fafc; }
+  .tag.peak { background: #fff1f2; border-color: #fecdd3; color: #9f1239; }
+  .tag.safe { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+  .scrub { margin-top: 10px; }
+  .scrub-head { display: flex; justify-content: space-between; align-items: center; font-weight: 700; }
+  .scrub-head .readout { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .ticks { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; padding: 0 4px; margin-top: -2px; }
+
+  /* ---------- Map ---------- */
+  #map-wrap { position: relative; flex: 1; min-width: 0; height: 100%; }
+  #map { position: absolute; inset: 0; background: #e5e7eb; }
+  .leaflet-container { font-family: inherit; }
+  body.inspecting #map { cursor: crosshair; }
+
+  .map-toolbar { position: absolute; top: 14px; left: 56px; z-index: 900; display: flex; gap: 8px; flex-wrap: wrap; }
+  .inspect-toggle {
+    background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 9px 15px;
+    font-weight: 700; font-size: 13px; box-shadow: var(--shadow); color: #1e293b;
+    display: inline-flex; align-items: center; gap: 8px; transition: all .15s;
+  }
+  .inspect-toggle:hover { background: #f8fafc; }
+  .inspect-toggle.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .map-chip {
+    background: rgba(255,255,255,.92); backdrop-filter: blur(6px); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 14px; font-size: 12px; color: #334155; box-shadow: var(--shadow); display: none;
+  }
+  body.inspecting .map-chip.inspect-help { display: inline-block; }
+
+  /* ---------- Inspector drawer ---------- */
+  #drawer {
+    position: absolute; top: 14px; right: 14px; width: 330px; max-height: calc(100% - 220px);
+    overflow-y: auto; z-index: 950; background: rgba(255,255,255,.97); backdrop-filter: blur(8px);
+    border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+    transform: translateX(calc(100% + 30px)); opacity: 0; pointer-events: none;
+    transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s;
+  }
+  #drawer.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+  .drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 6px; }
+  .drawer-head h3 { margin: 0; font-size: 14px; }
+  .icon-btn { border: none; background: #f1f5f9; width: 28px; height: 28px; border-radius: 8px; color: #475569; }
+  .icon-btn:hover { background: #e2e8f0; }
+  .drawer-body { padding: 4px 16px 16px; }
+  .score-hero { display: flex; align-items: center; gap: 14px; margin: 6px 0 4px; }
+  .score-ring {
+    width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+    font-weight: 800; font-size: 26px; flex: 0 0 auto; box-shadow: inset 0 0 0 5px rgba(255,255,255,.35);
+  }
+  .score-hero .band { font-weight: 800; font-size: 16px; }
+  .score-hero .sub { color: var(--muted); font-size: 12px; margin-top: 2px; line-height: 1.4; }
+  .radar-wrap { position: relative; height: 245px; margin-top: 4px; }
+  .sect-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 12px 0 6px; }
+  .haven {
+    display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line);
+    border-radius: 10px; margin-bottom: 6px; background: #fff; cursor: pointer;
+  }
+  .haven:hover { background: #f8fafc; }
+  .haven .ic { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; color: #fff; flex: 0 0 auto; }
+  .haven .ic.police { background: #2563eb; }
+  .haven .ic.shop { background: #059669; }
+  .haven .nm { font-weight: 600; font-size: 13px; line-height: 1.2; }
+  .haven .ty { font-size: 11px; color: var(--muted); }
+  .haven .ds { margin-left: auto; font-weight: 700; font-size: 12px; color: #334155; white-space: nowrap; }
+  .oob {
+    margin-top: 8px; padding: 12px; border-radius: 12px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 13px; line-height: 1.5;
+  }
+  .oob i { margin-right: 6px; }
+  .loader { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 22px 4px; }
+  .spin { width: 18px; height: 18px; border: 3px solid #cbd5e1; border-top-color: var(--brand); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Markers ---------- */
+  .pin {
+    width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    display: grid; place-items: center; box-shadow: 0 4px 10px rgba(0,0,0,.35); border: 2px solid #fff;
+  }
+  .pin span { transform: rotate(45deg); color: #fff; font-weight: 800; font-size: 13px; }
+  .pin.origin { background: #2563eb; }
+  .pin.dest { background: #E11D48; }
+  .probe {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--brand); border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(59,130,246,.3); animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(59,130,246,.5); } 100% { box-shadow: 0 0 0 16px rgba(59,130,246,0); } }
+  .lm-dot { width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 3px solid #6366f1; box-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .haven-pin { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 12px; border: 2px solid #fff; box-shadow: 0 3px 8px rgba(0,0,0,.35); }
+  .haven-pin.police { background: #2563eb; }
+  .haven-pin.shop { background: #059669; }
+
+  .toast {
+    position: absolute; bottom: 24px; left: 50%; transform: translate(-50%, 20px); z-index: 1200;
+    background: #0f172a; color: #fff; padding: 10px 16px; border-radius: 999px; font-size: 13px;
+    opacity: 0; transition: all .25s; pointer-events: none; max-width: 80%; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* MiniMap tweaks */
+  .leaflet-control-minimap { border-radius: 12px !important; border: 3px solid #fff !important; box-shadow: var(--shadow) !important; overflow: hidden; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 900px) {
+    #app { flex-direction: column-reverse; }
+    #sidebar { width: 100%; min-width: 0; height: 52%; border-right: none; border-top: 1px solid var(--line); }
+    #map-wrap { height: 48%; flex: none; }
+    #drawer { width: calc(100% - 28px); max-height: 70%; }
+    .map-toolbar { left: 54px; }
+  }
+</style>
 </head>
+
 <body>
-  <div id="app">
-    <aside id="sidebar">
-      <h1>&#128737;&#65039; Safe Route Optimizer</h1>
-      <button id="diag-btn" class="secondary" type="button">Model diagnostics</button>
+<div id="app">
 
-      <section class="panel">
-        <h2>1. Area</h2>
-        <label for="place-input">Place name</label>
-        <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
-        <label for="dist-input">Coverage radius (m)</label>
-        <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100">
-        <p class="hint">Larger radius = more ground covered (like a Google Maps
-          search area), but a slower first-time download and training pass.
-          Capped at 5000 m to keep the pedestrian network download and
-          model training practical.</p>
-        <button id="load-area-btn">Load Area</button>
-        <p id="area-status" class="status"></p>
-      </section>
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo"><i class="fa-solid fa-shield-heart"></i></div>
+      <div>
+        <h1>SafeRoute AI</h1>
+        <p>Pedestrian routing that weighs safety, not just distance.</p>
+      </div>
+    </div>
 
-      <section class="panel">
-        <h2>2. Locations</h2>
-        <label for="start-input">Start location</label>
-        <div class="input-row">
-          <input id="start-input" type="text" placeholder="Leave blank to use the area centre" disabled title="Load an area first">
-          <button id="set-start-btn" class="secondary" disabled title="Load an area first">Set</button>
+    <!-- 1. Area -->
+    <section class="card">
+      <h2><i class="fa-solid fa-earth-asia"></i> 1 &middot; Service area</h2>
+      <div class="grid2">
+        <div>
+          <label for="place-input">Place</label>
+          <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
         </div>
-
-        <label for="dest-input">Destination</label>
-        <div class="input-row">
-          <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
-          <button id="set-dest-btn" class="secondary" disabled title="Load an area first">Set</button>
+        <div>
+          <label for="dist-input">Radius (m)</label>
+          <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100">
         </div>
-        <p id="location-status" class="status"></p>
-      </section>
+      </div>
+      <button id="load-area-btn" class="btn primary block"><i class="fa-solid fa-cloud-arrow-down"></i> Load area</button>
+      <p id="area-status" class="status"></p>
+    </section>
 
-      <section class="panel">
-        <h2>3. Route settings</h2>
-        <label for="hour-slider">Time of day: <span id="hour-value">12</span>:00</label>
-        <input id="hour-slider" type="range" min="0" max="23" value="12">
-        <p class="hint">Defaults to your device's current local hour. Move it to plan for a
-          different time -- the risk model runs entirely on hour-of-day patterns
-          (typical lighting/activity by hour), not live conditions, so "future" hours
-          are just as valid a query as "now".</p>
+    <!-- 2. Locations -->
+    <section class="card">
+      <h2><i class="fa-solid fa-location-dot"></i> 2 &middot; Where to?</h2>
 
-        <label for="lambda-slider">Distance &harr; Safety (&lambda; = <span id="lambda-value">0.50</span>)</label>
-        <input id="lambda-slider" type="range" min="0" max="1" value="0.5" step="0.05">
-        <div class="slider-labels"><span>Safest</span><span>Shortest</span></div>
+      <label for="start-input">Origin <span style="font-weight:400;color:#94a3b8">(blank = area centre)</span></label>
+      <div class="row">
+        <input id="start-input" type="text" placeholder="Search a place near the area" disabled>
+        <button id="set-start-btn" class="btn ghost small" disabled>Set</button>
+      </div>
 
-        <button id="find-route-btn" disabled>Find Route</button>
-        <p id="route-status" class="status"></p>
-      </section>
+      <label for="dest-input">Destination</label>
+      <div class="row">
+        <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled>
+        <button id="set-dest-btn" class="btn ghost small" disabled>Set</button>
+      </div>
 
-      <section class="panel" id="results-panel" style="display:none;">
-        <h2>4. Routes</h2>
-        <div class="route-row" id="row-shortest">
-          <span class="swatch" style="background:#f43f5e; color:#f43f5e;"></span>
-          <span class="route-name">Shortest</span>
-          <span class="metrics"></span>
+      <label style="margin-top:12px">Quick-select landmarks</label>
+      <div id="pills" class="pills"><span class="pill-empty">Load an area to see landmarks.</span></div>
+      <p class="hint" style="margin-top:0">First tap sets the origin, the next sets the destination.</p>
+
+      <div class="selection">
+        <div class="sel-box"><b>Origin</b><span id="sel-origin">Area centre (default)</span></div>
+        <div class="sel-box"><b>Destination</b><span id="sel-dest">Not set</span></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button id="swap-btn" class="btn ghost small" title="Swap"><i class="fa-solid fa-arrow-right-arrow-left"></i> Swap</button>
+        <button id="clear-btn" class="btn ghost small"><i class="fa-solid fa-xmark"></i> Clear</button>
+      </div>
+      <p id="location-status" class="status"></p>
+    </section>
+
+    <!-- 3. Settings -->
+    <section class="card">
+      <h2><i class="fa-solid fa-sliders"></i> 3 &middot; Route settings</h2>
+      <label for="hour-slider">Time of day: <b id="hour-value">12:00</b></label>
+      <input id="hour-slider" type="range" min="0" max="23" value="12">
+      <p class="hint">The model uses typical hour-of-day patterns (lighting, footfall, open shops). It is not a live feed.</p>
+
+      <label for="lambda-slider" style="margin-top:12px">Distance &harr; Safety (&lambda; = <b id="lambda-value">0.50</b>) &mdash; balanced route</label>
+      <input id="lambda-slider" type="range" min="0" max="1" step="0.05" value="0.5">
+      <div class="slider-labels"><span>Safer</span><span>Shorter</span></div>
+
+      <button id="find-route-btn" class="btn primary block" disabled><i class="fa-solid fa-route"></i> Find routes</button>
+      <p id="route-status" class="status"></p>
+    </section>
+
+    <!-- 4. Results -->
+    <section class="card" id="results-card" style="display:none">
+      <h2><i class="fa-solid fa-code-compare"></i> 4 &middot; Route comparison</h2>
+      <div id="route-rows"></div>
+      <div id="insight" class="insight"></div>
+      <div id="warnings" class="warnings"></div>
+    </section>
+
+    <!-- 5. Diurnal -->
+    <section class="card" id="diurnal-card" style="display:none">
+      <h2><i class="fa-solid fa-chart-line"></i> 5 &middot; 24-hour risk profile <span id="diurnal-route-name" style="margin-left:auto;text-transform:none;letter-spacing:0"></span></h2>
+      <div class="chart-wrap"><canvas id="diurnal-chart"></canvas></div>
+      <div id="diurnal-meta" class="diurnal-meta"></div>
+
+      <div class="scrub">
+        <div class="scrub-head">
+          <span id="scrub-time">12:00</span>
+          <span class="readout" id="scrub-readout">&mdash;</span>
         </div>
-        <div class="route-row" id="row-balanced">
-          <span class="swatch" style="background:#eab308; color:#eab308;"></span>
-          <span class="route-name">Balanced</span>
-          <span class="metrics"></span>
-        </div>
-        <div class="route-row" id="row-safest">
-          <span class="swatch" style="background:#14b8a6; color:#14b8a6;"></span>
-          <span class="route-name">Safest</span>
-          <span class="metrics"></span>
-        </div>
-      </section>
+        <input id="scrub-slider" type="range" min="0" max="23" value="12" aria-label="Scrub through the day">
+        <div class="ticks"><span>00</span><span>04</span><span>08</span><span>12</span><span>16</span><span>20</span><span>23</span></div>
+        <button id="apply-hour-btn" class="btn ghost small block"><i class="fa-solid fa-rotate"></i> Re-route at this hour</button>
+      </div>
+      <p id="diurnal-status" class="status"></p>
+    </section>
+  </aside>
+
+  <!-- ===================== MAP ===================== -->
+  <main id="map-wrap">
+    <div id="map"></div>
+
+    <div class="map-toolbar">
+      <button id="inspect-toggle" class="inspect-toggle" aria-pressed="false">&#128269; Inspect Area Mode</button>
+      <span class="map-chip inspect-help"><i class="fa-solid fa-hand-pointer"></i> Click anywhere on the map</span>
+    </div>
+
+    <aside id="drawer" aria-live="polite">
+      <div class="drawer-head">
+        <h3><i class="fa-solid fa-magnifying-glass-location" style="color:var(--brand)"></i> Area safety inspector</h3>
+        <button id="drawer-close" class="icon-btn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="drawer-body" class="drawer-body"></div>
     </aside>
 
-    <div id="map"></div>
-  </div>
+    <div id="toast" class="toast"></div>
+  </main>
+</div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-  <script src="{{ url_for('static', filename='diagnostics.js') }}"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+(() => {
+  "use strict";
+
+  /* =====================================================================
+   * Constants
+   * ===================================================================== */
+  const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  const ROUTE_STYLE = {
+    shortest: { label: "Shortest", color: "#E11D48", icon: "fa-bolt" },
+    balanced: { label: "Balanced", color: "#F59E0B", icon: "fa-scale-balanced" },
+    safest:   { label: "Safest",   color: "#10B981", icon: "fa-shield-heart" },
+  };
+  const ROUTE_KEYS = ["shortest", "balanced", "safest"];
+  const WALK_M_PER_MIN = 83.3; // ~5 km/h
+  const RADAR_LABELS = ["Connectivity", "Police Proximity", "Commercial Eyes", "Visibility", "Road Hierarchy"];
+  const RADAR_KEYS = ["connectivity", "police_proximity", "commercial_eyes", "visibility", "road_hierarchy"];
+
+  /* =====================================================================
+   * State
+   * ===================================================================== */
+  const S = {
+    areaLoaded: false,
+    bbox: null,            // {south, west, north, east}
+    landmarks: [],
+    origin: null,          // {lat, lon, name}
+    dest: null,
+    routes: null,
+    activeKey: "safest",
+    diurnal: {},           // per-route-key cache of {hourly_risk, ...}
+    inspectOn: false,
+    lastInspect: null,     // {lat, lon}
+    inspectSeq: 0,
+  };
+
+  /* =====================================================================
+   * DOM helpers
+   * ===================================================================== */
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pad = (h) => String(h).padStart(2, "0") + ":00";
+
+  function setStatus(el, msg, kind) { el.textContent = msg || ""; el.className = "status" + (kind ? " " + kind : ""); }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
+  }
+
+  async function api(path, opts) {
+    const res = await fetch(path, opts);
+    let data = null;
+    try { data = await res.json(); } catch (_) { /* non-JSON */ }
+    if (!res.ok) throw new Error((data && (data.error || data.message)) || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function riskColor(score) {
+    if (score == null || isNaN(score)) return "#94a3b8";
+    if (score < 35) return "#10B981";
+    if (score < 60) return "#F59E0B";
+    return "#E11D48";
+  }
+  const fmtDist = (m) => (m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
+  const fmtTime = (m) => Math.max(1, Math.round(m / WALK_M_PER_MIN)) + " min";
+
+  /* =====================================================================
+   * Map + MiniMap
+   * ===================================================================== */
+  const map = L.map("map", { zoomControl: true, preferCanvas: false }).setView([28.5535, 77.1998], 14);
+  L.tileLayer(TILE_URL, { attribution: TILE_ATTR, subdomains: "abcd", maxZoom: 19 }).addTo(map);
+
+  const miniTiles = L.tileLayer(TILE_URL, { attribution: "", subdomains: "abcd", minZoom: 0, maxZoom: 18 });
+  const miniMap = new L.Control.MiniMap(miniTiles, {
+    position: "bottomright",
+    width: 170, height: 140,
+    zoomLevelOffset: -5,
+    toggleDisplay: true,
+    minimized: false,
+    aimingRectOptions: { color: "#E11D48", weight: 2, fillOpacity: 0.12, interactive: false },
+    shadowRectOptions: { color: "#0f172a", weight: 1, opacity: 0.1, fillOpacity: 0.05, interactive: false },
+  }).addTo(map);
+
+  let miniBoundsLayer = null;
+  function updateMiniMapBounds(bounds) {
+    try {
+      const mm = miniMap._miniMap; // internal map instance exposed by Leaflet.MiniMap
+      if (!mm) return;
+      if (miniBoundsLayer) mm.removeLayer(miniBoundsLayer);
+      miniBoundsLayer = L.rectangle(bounds, { color: "#3B82F6", weight: 2, dashArray: "4 4", fillColor: "#3B82F6", fillOpacity: 0.12, interactive: false }).addTo(mm);
+      mm.fitBounds(bounds.pad(0.35), { animate: false });
+    } catch (e) { /* minimap internals changed: ignore, the main map still works */ }
+  }
+
+  /* ---------- Layers ---------- */
+  let hullLayer = null;
+  const landmarkLayer = L.layerGroup().addTo(map);
+  const routeGroup = L.layerGroup().addTo(map);
+  const havenLayer = L.layerGroup().addTo(map);
+  let routeLayers = {};           // key -> {halo, line}
+  let originMarker = null, destMarker = null, probeMarker = null;
+
+  function pinIcon(kind, letter) {
+    return L.divIcon({ className: "", html: `<div class="pin ${kind}"><span>${letter}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30] });
+  }
+
+  function drawHull(geojson) {
+    if (hullLayer) { map.removeLayer(hullLayer); hullLayer = null; }
+    if (!geojson) return;
+    hullLayer = L.geoJSON(geojson, {
+      interactive: false, // let clicks fall through to the map (inspector)
+      style: { color: "#3B82F6", weight: 2, opacity: 0.85, dashArray: "8 8", fillColor: "#3B82F6", fillOpacity: 0.1 },
+    }).addTo(map);
+    hullLayer.bringToBack();
+  }
+
+  function normBbox(b) {
+    if (!b) return null;
+    if (Array.isArray(b)) return { south: b[0], west: b[1], north: b[2], east: b[3] };
+    return b;
+  }
+
+  /* =====================================================================
+   * Area + landmarks
+   * ===================================================================== */
+  async function loadArea() {
+    const place = $("place-input").value.trim() || "Hauz Khas, Delhi, India";
+    const dist = parseInt($("dist-input").value, 10) || 2500;
+    $("load-area-btn").disabled = true;
+    setStatus($("area-status"), "Loading street network and model… the first load of a new area can take a while.", "");
+    try {
+      const a = await api("/api/load_area", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place, dist }) });
+      S.areaLoaded = true;
+      clearAll(true);
+      setStatus($("area-status"), `Loaded ${a.place} · ${a.num_nodes.toLocaleString()} junctions · ${a.num_edges.toLocaleString()} street segments`, "ok");
+      ["start-input", "dest-input", "set-start-btn", "set-dest-btn"].forEach((id) => ($(id).disabled = false));
+      await loadLandmarks(true);
+    } catch (e) {
+      setStatus($("area-status"), e.message, "err");
+    } finally {
+      $("load-area-btn").disabled = false;
+      updateFindBtn();
+    }
+  }
+
+  async function loadLandmarks(fit) {
+    let d;
+    try { d = await api("/api/landmarks"); }
+    catch (e) { setStatus($("area-status"), "Could not load landmarks: " + e.message, "err"); return; }
+
+    S.areaLoaded = !!(d.area_loaded ?? d.hull_geojson);
+    S.bbox = normBbox(d.bbox);
+    S.landmarks = (d.landmarks || []).filter((l) => l.in_loaded_area === true);
+
+    drawHull(d.hull_geojson);
+    if (S.bbox) {
+      const b = L.latLngBounds([S.bbox.south, S.bbox.west], [S.bbox.north, S.bbox.east]);
+      updateMiniMapBounds(b);
+      if (fit) map.fitBounds(b.pad(0.05));
+    }
+    renderPills();
+    drawLandmarkDots();
+    if (S.areaLoaded) {
+      ["start-input", "dest-input", "set-start-btn", "set-dest-btn"].forEach((id) => ($(id).disabled = false));
+    }
+    updateFindBtn();
+  }
+
+  function drawLandmarkDots() {
+    landmarkLayer.clearLayers();
+    S.landmarks.forEach((l) => {
+      L.marker([l.lat, l.lon], { icon: L.divIcon({ className: "", html: '<div class="lm-dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }), keyboard: false })
+        .bindTooltip(esc(l.name), { direction: "top", offset: [0, -6] })
+        .on("click", () => pickLandmark(l))
+        .addTo(landmarkLayer);
+    });
+  }
+
+  function renderPills() {
+    const box = $("pills");
+    if (!S.landmarks.length) {
+      box.innerHTML = '<span class="pill-empty">' + (S.areaLoaded ? "No preset landmarks inside this area." : "Load an area to see landmarks.") + "</span>";
+      return;
+    }
+    box.innerHTML = "";
+    S.landmarks.forEach((l, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "pill";
+      b.dataset.idx = i;
+      b.innerHTML = `<i class="fa-solid fa-location-crosshairs"></i>${esc(l.name)}`;
+      b.addEventListener("click", () => pickLandmark(l));
+      box.appendChild(b);
+    });
+    refreshPillStates();
+  }
+
+  function refreshPillStates() {
+    document.querySelectorAll("#pills .pill").forEach((b) => {
+      const l = S.landmarks[+b.dataset.idx];
+      b.classList.toggle("is-origin", !!(S.origin && l && S.origin.name === l.name));
+      b.classList.toggle("is-dest", !!(S.dest && l && S.dest.name === l.name));
+    });
+  }
+
+  /* =====================================================================
+   * Origin / destination handling
+   * ===================================================================== */
+  function pickLandmark(l) {
+    const pt = { lat: l.lat, lon: l.lon, name: l.name };
+    if (!S.origin) setPoint("origin", pt);
+    else if (!S.dest) setPoint("dest", pt);
+    else setPoint("dest", pt); // both set: replace destination
+    map.panTo([l.lat, l.lon], { animate: true });
+  }
+
+  function setPoint(kind, pt) {
+    if (kind === "origin") {
+      S.origin = pt;
+      if (originMarker) map.removeLayer(originMarker);
+      originMarker = L.marker([pt.lat, pt.lon], { icon: pinIcon("origin", "A"), zIndexOffset: 800 }).bindTooltip("Origin: " + esc(pt.name)).addTo(map);
+    } else {
+      S.dest = pt;
+      if (destMarker) map.removeLayer(destMarker);
+      destMarker = L.marker([pt.lat, pt.lon], { icon: pinIcon("dest", "B"), zIndexOffset: 800 }).bindTooltip("Destination: " + esc(pt.name)).addTo(map);
+    }
+    syncSelection();
+  }
+
+  function syncSelection() {
+    $("sel-origin").textContent = S.origin ? S.origin.name : "Area centre (default)";
+    $("sel-dest").textContent = S.dest ? S.dest.name : "Not set";
+    refreshPillStates();
+    updateFindBtn();
+  }
+
+  function clearAll(keepArea) {
+    if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+    if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+    S.origin = null; S.dest = null;
+    clearRoutes();
+    syncSelection();
+    setStatus($("location-status"), "");
+    setStatus($("route-status"), "");
+  }
+
+  function swapPoints() {
+    if (!S.origin || !S.dest) { toast("Set both an origin and a destination to swap them."); return; }
+    const o = S.origin, d = S.dest;
+    setPoint("origin", d); setPoint("dest", o);
+  }
+
+  async function geocodeInto(kind) {
+    const input = $(kind === "origin" ? "start-input" : "dest-input");
+    const q = input.value.trim();
+    if (!q) { setStatus($("location-status"), "Type a place to search for.", "warn"); return; }
+    setStatus($("location-status"), "Searching…", "");
+    try {
+      const r = await api("/api/geocode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }) });
+      setPoint(kind, { lat: r.lat, lon: r.lon, name: q });
+      map.flyTo([r.lat, r.lon], Math.max(map.getZoom(), 15), { duration: 0.6 });
+      setStatus($("location-status"), `${kind === "origin" ? "Origin" : "Destination"} set.`, "ok");
+    } catch (e) {
+      setStatus($("location-status"), e.message, "err");
+    }
+  }
+
+  function updateFindBtn() { $("find-route-btn").disabled = !(S.areaLoaded && S.dest); }
+
+  /* =====================================================================
+   * Routing
+   * ===================================================================== */
+  const hourSlider = $("hour-slider");
+  const currentHour = () => parseInt(hourSlider.value, 10);
+
+  function clearRoutes() {
+    routeGroup.clearLayers(); routeLayers = {};
+    S.routes = null; S.diurnal = {};
+    $("results-card").style.display = "none";
+    $("diurnal-card").style.display = "none";
+    if (diurnalChart) { diurnalChart.destroy(); diurnalChart = null; }
+  }
+
+  async function findRoutes() {
+    if (!S.dest) return;
+    const btn = $("find-route-btn");
+    btn.disabled = true;
+    setStatus($("route-status"), "Scoring every street segment and searching for routes…", "");
+    const body = {
+      place: $("place-input").value.trim() || undefined,
+      dist: parseInt($("dist-input").value, 10) || undefined,
+      hour: currentHour(),
+      lambda: parseFloat($("lambda-slider").value),
+      dest: [S.dest.lat, S.dest.lon],
+    };
+    if (S.origin) body.orig = [S.origin.lat, S.origin.lon];
+    try {
+      const r = await api("/api/route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const routes = r.routes || r; // supports {routes:{...}} and a bare {shortest,...}
+      clearRoutes();
+      S.routes = {};
+      ROUTE_KEYS.forEach((k) => { if (routes[k]) S.routes[k] = normalizeRoute(routes[k]); });
+      renderRoutes(r.warnings || []);
+      setStatus($("route-status"), `Routes ready for ${pad(currentHour())}.`, "ok");
+    } catch (e) {
+      setStatus($("route-status"), e.message, "err");
+    } finally {
+      updateFindBtn();
+    }
+  }
+
+  // Accepts both the live server field names and the names used in the spec.
+  function normalizeRoute(r) {
+    return {
+      geojson: r.geojson,
+      length_m: r.distance_m ?? r.length_m ?? 0,
+      risk: r.avg_risk ?? r.risk_score ?? r.avg_insecurity ?? null,
+      peak: r.peak_segment_risk ?? null,
+      edge_ids: r.edge_ids || [],
+      reasons: r.reasons || [],
+    };
+  }
+
+  function renderRoutes(warnings) {
+    // ---- draw: wide translucent halo + crisp inner line ----
+    const allBounds = [];
+    ROUTE_KEYS.forEach((k) => {
+      const r = S.routes[k]; if (!r) return;
+      const c = ROUTE_STYLE[k].color;
+      const halo = L.geoJSON(r.geojson, { style: { color: c, weight: 14, opacity: 0.28, lineCap: "round", lineJoin: "round" }, interactive: false });
+      const line = L.geoJSON(r.geojson, { style: { color: c, weight: 5, opacity: 1, lineCap: "round", lineJoin: "round" } });
+      line.on("click", () => selectRoute(k));
+      halo.addTo(routeGroup); line.addTo(routeGroup);
+      routeLayers[k] = { halo, line };
+      allBounds.push(line.getBounds());
+    });
+    if (allBounds.length) {
+      let b = allBounds[0];
+      allBounds.slice(1).forEach((x) => (b = b.extend(x)));
+      map.fitBounds(b.pad(0.18), { maxZoom: 17 });
+    }
+
+    // ---- comparison rows ----
+    const rows = $("route-rows");
+    rows.innerHTML = "";
+    ROUTE_KEYS.forEach((k) => {
+      const r = S.routes[k]; if (!r) return;
+      const st = ROUTE_STYLE[k];
+      const div = document.createElement("div");
+      div.className = "route-row"; div.id = "row-" + k; div.style.color = st.color;
+      div.innerHTML = `
+        <span class="dot"></span>
+        <div>
+          <div class="name"><i class="fa-solid ${st.icon}" style="color:${st.color};margin-right:6px"></i>${st.label}</div>
+          <div class="meta"><i class="fa-solid fa-ruler-horizontal"></i>${fmtDist(r.length_m)} &nbsp;&middot;&nbsp; <i class="fa-solid fa-person-walking"></i>${fmtTime(r.length_m)}</div>
+        </div>
+        <div class="score-chip" style="background:${riskColor(r.risk)}">${r.risk == null ? "–" : Math.round(r.risk)}<small>risk</small></div>`;
+      div.addEventListener("click", () => selectRoute(k));
+      rows.appendChild(div);
+    });
+
+    // ---- insight ----
+    const ins = $("insight");
+    const s = S.routes.shortest, f = S.routes.safest;
+    if (s && f && s.risk > 0 && f.risk != null) {
+      const cut = Math.round(((s.risk - f.risk) / s.risk) * 100);
+      const extraM = Math.round(f.length_m - s.length_m);
+      if (cut > 0) {
+        ins.style.display = "block";
+        ins.innerHTML = `<i class="fa-solid fa-circle-check"></i> The safest route cuts average risk by <b>${cut}%</b> for about <b>${Math.max(0, extraM)} m</b> (${Math.max(0, Math.round(extraM / WALK_M_PER_MIN))} min) more walking.`;
+      } else {
+        ins.style.display = "block";
+        ins.innerHTML = `<i class="fa-solid fa-circle-info"></i> The shortest route is already about as safe as it gets between these two points.`;
+      }
+    } else ins.style.display = "none";
+
+    // ---- warnings ----
+    const w = $("warnings");
+    if (warnings && warnings.length) { w.style.display = "block"; w.innerHTML = warnings.map((x) => `<div><i class="fa-solid fa-triangle-exclamation"></i> ${esc(x)}</div>`).join(""); }
+    else w.style.display = "none";
+
+    $("results-card").style.display = "block";
+    $("diurnal-card").style.display = "block";
+    $("scrub-slider").value = currentHour();
+    selectRoute(S.routes[S.activeKey] ? S.activeKey : "safest");
+  }
+
+  function selectRoute(key) {
+    if (!S.routes || !S.routes[key]) return;
+    S.activeKey = key;
+    ROUTE_KEYS.forEach((k) => {
+      const row = $("row-" + k); if (row) row.classList.toggle("active", k === key);
+      const l = routeLayers[k]; if (!l) return;
+      const on = k === key;
+      l.halo.setStyle({ opacity: on ? 0.38 : 0.1, weight: on ? 16 : 10 });
+      l.line.setStyle({ opacity: on ? 1 : 0.55, weight: on ? 6 : 4 });
+      if (on) { l.halo.bringToFront(); l.line.bringToFront(); }
+    });
+    $("diurnal-route-name").innerHTML = `<span style="color:${ROUTE_STYLE[key].color};font-weight:700">${ROUTE_STYLE[key].label}</span>`;
+    loadDiurnal(key);
+  }
+
+  /* =====================================================================
+   * 24-hour diurnal profile
+   * ===================================================================== */
+  let diurnalChart = null;
+
+  async function loadDiurnal(key) {
+    const r = S.routes[key];
+    if (!r || !r.edge_ids.length) { setStatus($("diurnal-status"), "No edge data for this route.", "warn"); return; }
+    if (S.diurnal[key]) { drawDiurnal(key); return; }
+    setStatus($("diurnal-status"), "Computing 24-hour profile…", "");
+    try {
+      const d = await api("/api/route_diurnal_profile?edge_ids=" + r.edge_ids.join(","));
+      S.diurnal[key] = d;
+      if (S.activeKey === key) drawDiurnal(key);
+    } catch (e) {
+      setStatus($("diurnal-status"), e.message, "err");
+    }
+  }
+
+  function drawDiurnal(key) {
+    const d = S.diurnal[key]; if (!d) return;
+    setStatus($("diurnal-status"), "");
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+    const color = ROUTE_STYLE[key].color;
+    const h = parseInt($("scrub-slider").value, 10);
+    const marker = hours.map((x) => (x === h ? d.hourly_risk[x] : null));
+
+    if (diurnalChart) diurnalChart.destroy();
+    const ctx = $("diurnal-chart").getContext("2d");
+    const grad = ctx.createLinearGradient(0, 0, 0, 170);
+    grad.addColorStop(0, color + "55"); grad.addColorStop(1, color + "05");
+
+    diurnalChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: hours.map((x) => String(x).padStart(2, "0")),
+        datasets: [
+          { label: "Avg route risk", data: d.hourly_risk, borderColor: color, backgroundColor: grad, fill: true, tension: 0.35, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4 },
+          { label: "Selected hour", data: marker, borderColor: "#0f172a", backgroundColor: "#fff", pointRadius: 7, pointBorderWidth: 3, showLine: false },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { title: (it) => it[0].label + ":00", label: (it) => (it.parsed.y == null ? null : `Risk ${it.parsed.y.toFixed(1)}`) } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 10 } } },
+          y: { suggestedMin: 0, suggestedMax: 100, grid: { color: "#eef2f7" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Risk (0–100)", font: { size: 10 } } },
+        },
+        onClick: (_, els) => { if (els.length) { $("scrub-slider").value = els[0].index; onScrub(); } },
+      },
+    });
+
+    $("diurnal-meta").innerHTML = `
+      <span class="tag peak"><i class="fa-solid fa-moon"></i> Riskiest ${pad(d.peak_hour)} (${d.hourly_risk[d.peak_hour].toFixed(1)})</span>
+      <span class="tag safe"><i class="fa-solid fa-sun"></i> Safest ${pad(d.safest_hour)} (${d.hourly_risk[d.safest_hour].toFixed(1)})</span>
+      <span class="tag"><i class="fa-solid fa-ruler"></i> ${fmtDist(d.length_m)}</span>`;
+    onScrub();
+  }
+
+  function onScrub() {
+    const h = parseInt($("scrub-slider").value, 10);
+    $("scrub-time").textContent = pad(h);
+    const d = S.diurnal[S.activeKey];
+    if (!d) { $("scrub-readout").textContent = "—"; return; }
+    const v = d.hourly_risk[h];
+    const delta = v - d.hourly_risk[d.safest_hour];
+    $("scrub-readout").innerHTML = `Risk <b style="color:${riskColor(v)}">${v.toFixed(1)}</b>` + (h === d.safest_hour ? " · safest hour" : h === d.peak_hour ? " · riskiest hour" : ` · +${delta.toFixed(1)} vs safest`);
+    if (diurnalChart) {
+      diurnalChart.data.datasets[1].data = d.hourly_risk.map((x, i) => (i === h ? x : null));
+      diurnalChart.update("none");
+    }
+  }
+
+  /* =====================================================================
+   * Area Safety Inspector
+   * ===================================================================== */
+  let radarChart = null;
+
+  function setInspect(on) {
+    S.inspectOn = on;
+    $("inspect-toggle").classList.toggle("on", on);
+    $("inspect-toggle").setAttribute("aria-pressed", on);
+    document.body.classList.toggle("inspecting", on);
+    if (!on) closeDrawer();
+    else toast("Inspect mode on: click the map to check an area.");
+  }
+
+  function closeDrawer() {
+    $("drawer").classList.remove("open");
+    if (probeMarker) { map.removeLayer(probeMarker); probeMarker = null; }
+    havenLayer.clearLayers();
+    S.lastInspect = null;
+  }
+
+  map.on("click", (e) => {
+    if (!S.inspectOn) return;
+    if (!S.areaLoaded) { toast("Load an area first."); return; }
+    inspectPoint(e.latlng.lat, e.latlng.lng);
+  });
+
+  async function inspectPoint(lat, lon) {
+    const seq = ++S.inspectSeq;
+    S.lastInspect = { lat, lon };
+    if (probeMarker) map.removeLayer(probeMarker);
+    probeMarker = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="probe"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }), interactive: false, zIndexOffset: 900 }).addTo(map);
+    havenLayer.clearLayers();
+
+    $("drawer").classList.add("open");
+    $("drawer-body").innerHTML = '<div class="loader"><div class="spin"></div>Analysing this spot at ' + pad(currentHour()) + "…</div>";
+    if (radarChart) { radarChart.destroy(); radarChart = null; }
+
+    try {
+      const d = await api(`/api/inspect_point?lat=${lat}&lon=${lon}&hour=${currentHour()}`);
+      if (seq !== S.inspectSeq) return; // a newer click superseded this one
+      d.out_of_bounds ? renderOutOfBounds(d) : renderInspection(d);
+    } catch (e) {
+      if (seq !== S.inspectSeq) return;
+      $("drawer-body").innerHTML = `<div class="oob"><i class="fa-solid fa-circle-exclamation"></i>${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderOutOfBounds(d) {
+    const nl = d.nearest_landmark;
+    const name = typeof nl === "string" ? nl : nl && nl.name;
+    const dist = (nl && (nl.distance_m ?? nl.dist_m)) ?? d.dist_m ?? d.distance_to_graph_m;
+    $("drawer-body").innerHTML = `
+      <div class="oob">
+        <i class="fa-solid fa-map-location-dot"></i><b>Outside the service area</b><br>
+        We don't have street-level safety data for this spot${d.distance_to_graph_m ? ` (${Math.round(d.distance_to_graph_m)} m from the nearest mapped street)` : ""}.
+        ${name ? `<br><br>The nearest landmark is <b>${esc(name)}</b>${dist != null ? `, about ${fmtDist(dist)} away` : ""}.` : ""}
+      </div>
+      ${nl && nl.lat != null ? `<button id="goto-lm" class="btn ghost block"><i class="fa-solid fa-location-arrow"></i> Take me to ${esc(name)}</button>` : ""}`;
+    const g = $("goto-lm");
+    if (g) g.onclick = () => map.flyTo([nl.lat, nl.lon], 15, { duration: 0.8 });
+  }
+
+  function havenKind(t) { return /police/i.test(t || "") ? "police" : "shop"; }
+
+  function renderInspection(d) {
+    const score = d.risk_score;
+    const col = riskColor(score);
+    const cp = d.cpted || d.cpted_metrics || {};
+    const havens = d.safe_havens || [];
+    const street = d.edge && d.edge.name ? d.edge.name : null;
+
+    $("drawer-body").innerHTML = `
+      <div class="score-hero">
+        <div class="score-ring" style="background:${col}">${Math.round(score)}</div>
+        <div>
+          <div class="band" style="color:${col}">${esc(d.risk_band || "")}</div>
+          <div class="sub">Local risk score (0&ndash;100, lower is safer) at ${pad(currentHour())}${street ? `<br>Nearest street: <b>${esc(street)}</b>` : ""}</div>
+        </div>
+      </div>
+      <div class="sect-title">CPTED safety factors <span style="text-transform:none;letter-spacing:0;font-weight:500">(outer = safer)</span></div>
+      <div class="radar-wrap"><canvas id="radar-chart"></canvas></div>
+      <div class="sect-title">Closest safe havens</div>
+      <div id="haven-list">
+        ${havens.length ? havens.map((h, i) => {
+          const k = havenKind(h.type);
+          return `<div class="haven" data-i="${i}">
+            <div class="ic ${k}"><i class="fa-solid ${k === "police" ? "fa-building-shield" : "fa-store"}"></i></div>
+            <div><div class="nm">${esc(h.name)}</div><div class="ty">${esc(h.type)}</div></div>
+            <div class="ds">${fmtDist(h.distance_m ?? h.dist_m ?? 0)}</div>
+          </div>`;
+        }).join("") : '<div class="hint">No police station or 24/7 shop within range. Be extra cautious here after dark.</div>'}
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost small" id="use-origin" style="flex:1"><i class="fa-solid fa-circle-dot"></i> Use as origin</button>
+        <button class="btn ghost small" id="use-dest" style="flex:1"><i class="fa-solid fa-flag-checkered"></i> Use as destination</button>
+      </div>`;
+
+    // Radar
+    const vals = RADAR_KEYS.map((k) => Math.max(0, Math.min(1, Number(cp[k] ?? 0))));
+    if (radarChart) radarChart.destroy();
+    radarChart = new Chart($("radar-chart").getContext("2d"), {
+      type: "radar",
+      data: {
+        labels: RADAR_LABELS,
+        datasets: [{ label: "Safety factors", data: vals, backgroundColor: "rgba(59,130,246,.22)", borderColor: "#3B82F6", borderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#3B82F6", pointBorderWidth: 2, pointRadius: 4 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (it) => `${Math.round(it.parsed.r * 100)}%` } } },
+        scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.25, display: false }, angleLines: { color: "#e2e8f0" }, grid: { color: "#e2e8f0" }, pointLabels: { font: { size: 11, weight: "600" }, color: "#334155" } } },
+      },
+    });
+
+    // Haven markers on the map + click-to-fly
+    havenLayer.clearLayers();
+    havens.forEach((h, i) => {
+      if (h.lat == null || h.lon == null) return;
+      const k = havenKind(h.type);
+      L.marker([h.lat, h.lon], { icon: L.divIcon({ className: "", html: `<div class="haven-pin ${k}"><i class="fa-solid ${k === "police" ? "fa-shield" : "fa-store"}"></i></div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) })
+        .bindTooltip(`${esc(h.name)} · ${fmtDist(h.distance_m ?? h.dist_m ?? 0)}`).addTo(havenLayer);
+    });
+    document.querySelectorAll("#haven-list .haven").forEach((el) => {
+      el.addEventListener("click", () => { const h = havens[+el.dataset.i]; if (h && h.lat != null) map.flyTo([h.lat, h.lon], 17, { duration: 0.6 }); });
+    });
+
+    const li = S.lastInspect;
+    $("use-origin").onclick = () => { setPoint("origin", { lat: li.lat, lon: li.lon, name: street || `Pin (${li.lat.toFixed(4)}, ${li.lon.toFixed(4)})` }); };
+    $("use-dest").onclick = () => { setPoint("dest", { lat: li.lat, lon: li.lon, name: street || `Pin (${li.lat.toFixed(4)}, ${li.lon.toFixed(4)})` }); };
+  }
+
+  /* =====================================================================
+   * Wiring
+   * ===================================================================== */
+  $("load-area-btn").addEventListener("click", loadArea);
+  $("set-start-btn").addEventListener("click", () => geocodeInto("origin"));
+  $("set-dest-btn").addEventListener("click", () => geocodeInto("dest"));
+  $("start-input").addEventListener("keydown", (e) => { if (e.key === "Enter") geocodeInto("origin"); });
+  $("dest-input").addEventListener("keydown", (e) => { if (e.key === "Enter") geocodeInto("dest"); });
+  $("swap-btn").addEventListener("click", swapPoints);
+  $("clear-btn").addEventListener("click", () => clearAll());
+  $("find-route-btn").addEventListener("click", findRoutes);
+  $("inspect-toggle").addEventListener("click", () => setInspect(!S.inspectOn));
+  $("drawer-close").addEventListener("click", closeDrawer);
+
+  $("lambda-slider").addEventListener("input", (e) => ($("lambda-value").textContent = parseFloat(e.target.value).toFixed(2)));
+
+  // Global hour: keeps the inspector in sync (debounced re-query)
+  let hourTimer = null;
+  hourSlider.addEventListener("input", () => {
+    $("hour-value").textContent = pad(currentHour());
+    clearTimeout(hourTimer);
+    hourTimer = setTimeout(() => {
+      if (S.inspectOn && S.lastInspect && $("drawer").classList.contains("open")) inspectPoint(S.lastInspect.lat, S.lastInspect.lon);
+    }, 350);
+  });
+
+  $("scrub-slider").addEventListener("input", onScrub);
+  $("apply-hour-btn").addEventListener("click", () => {
+    const h = parseInt($("scrub-slider").value, 10);
+    hourSlider.value = h; $("hour-value").textContent = pad(h);
+    findRoutes();
+  });
+
+  // Keep the minimap/maps correct when the layout changes
+  window.addEventListener("resize", () => map.invalidateSize());
+
+  /* =====================================================================
+   * Boot: default to the device's current hour, load landmarks, and
+   * auto-load the default area if the server has none loaded yet.
+   * ===================================================================== */
+  (async function init() {
+    const h = new Date().getHours();
+    hourSlider.value = h; $("hour-value").textContent = pad(h);
+    $("scrub-slider").value = h;
+
+    try {
+      const d = await api("/api/landmarks");
+      if (d.area_loaded) {
+        if (d.place) $("place-input").value = d.place;
+        setStatus($("area-status"), `Area ready: ${d.place || "loaded"}`, "ok");
+        await loadLandmarks(true);
+      } else {
+        await loadArea(); // nothing loaded yet: load the defaults in the inputs
+      }
+    } catch (e) {
+      setStatus($("area-status"), "Could not reach the server: " + e.message, "err");
+    }
+  })();
+})();
+</script>
 </body>
 </html>
