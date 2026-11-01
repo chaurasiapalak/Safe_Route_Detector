@@ -182,6 +182,9 @@
     });
   }
 
+  SRO.resetPills = function () { chosen.start = chosen.dest = null; renderPills(); };
+  SRO.swapPills = function () { const t = chosen.start; chosen.start = chosen.dest; chosen.dest = t; renderPills(); };
+
   function bindPillToolbar() {
     const seg = $("pill-target");
     if (!seg) return;
@@ -466,6 +469,7 @@
         if (placePoint(kind, e.latlng)) setPickMode(null);
         return;
       }
+      if (!window.SRO_INSPECT_MODE) return;              // Inspect Area Mode (#inspect-toggle) is OFF: plain map click does nothing
       if (!pointInRing(e.latlng.lat, e.latlng.lng, hullRing)) {
         toast("Click inside the dashed boundary to inspect an area.");
         return;
@@ -509,7 +513,7 @@
         <div class="diurnal-live" id="diurnal-live"></div>
         <div class="diurnal-actions">
           <span class="legend-bar" title="Low \u2192 elevated \u2192 high risk"><i>low</i><i>high</i></span>
-          <button type="button" class="ghost sm" id="reroute-btn" disabled>Re-optimise path for this hour</button>
+          <button type="button" class="ghost sm" id="apply-hour-btn" disabled>Re-optimise path for this hour</button>
         </div>
       </div>`;
   };
@@ -517,15 +521,17 @@
   SRO.mountDiurnal = function () {
     const slider = $("scrub-slider");
     if (!slider) return;
-    slider.addEventListener("input", () => setScrub(parseInt(slider.value, 10)));
-    const re = $("reroute-btn");
-    re.addEventListener("click", () => {
-      const hs = $("hour-slider");
-      hs.value = D.scrub;
-      $("hour-value").textContent = D.scrub;
-      findRoute();
-    });
-    refreshDiurnal();
+    if (!slider.dataset.bound) {                       // the scrubber is static markup now: bind its listeners ONCE
+      slider.dataset.bound = "1";
+      slider.addEventListener("input", () => setScrub(parseInt(slider.value, 10)));
+      $("apply-hour-btn").addEventListener("click", () => {
+        const hs = $("hour-slider");
+        hs.value = D.scrub;
+        $("hour-value").textContent = D.scrub;
+        findRoute();
+      });
+    }
+    refreshDiurnal();                                  // safe to call repeatedly: redraws for the active route
   };
 
   SRO.unmountDiurnal = function () {
@@ -552,7 +558,7 @@
     msg.hidden = true;
     slider.disabled = false;
     slider.style.setProperty("--track-bg", trackGradient(det.hourly_risk));
-    $("reroute-btn").disabled = false;
+    $("apply-hour-btn").disabled = false;
     buildChart(det.hourly_risk);
     updateScrubUi();
     applyColoring();
@@ -628,7 +634,7 @@
 
     const det = activeDetail();
     const live = $("diurnal-live");
-    const re = $("reroute-btn");
+    const re = $("apply-hour-btn");
     if (re) {
       const same = h === D.routeHour;
       re.disabled = !det || same;
@@ -768,7 +774,7 @@
     const box = $("landmark-pills");
     if (box) box.innerHTML = `<span class="pill-hint">Loading landmarks\u2026</span>`;
     loadLandmarks();
-    toast("Tip: click anywhere inside the dashed boundary to inspect its safety.", 5000);
+    toast("Tip: switch on Inspect Area Mode, then click inside the dashed boundary.", 5000);
   };
 
   document.addEventListener("DOMContentLoaded", () => {

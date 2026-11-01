@@ -340,6 +340,12 @@ if (findRouteBtn) {
   findRouteBtn.addEventListener("click", findRoute);
 }
 
+// Bottom-HUD-aware padding for route fits: keeps polylines clear of the collapsed #bottom-hud.
+// paddingBottomRight is [right, bottom] in Leaflet.
+function fitOpts(extra) {
+  return Object.assign({ paddingTopLeft: [30, 30], paddingBottomRight: [20, 220] }, extra || {});
+}
+
 async function findRoute() {
   if (!areaLoaded || !destLatLng) return;
 
@@ -377,10 +383,9 @@ async function findRoute() {
       boundsPoints.push(...latlngs);
     });
 
-    if (boundsPoints.length) map.fitBounds(L.latLngBounds(boundsPoints), { paddingTopLeft: [30, 30], paddingBottomRight: [30 + dockReserve(), 30] });
+    if (boundsPoints.length) map.fitBounds(L.latLngBounds(boundsPoints), fitOpts());
 
     if (resultsPanel) resultsPanel.style.display = "block";
-    if (window.SRO_DOCK) window.SRO_DOCK.open("route");   // success: slide the deep-inspector dock in
     if (window.SRO) window.SRO.onRoutesRendered(data);   // starts the 24-hour profile fetch
     renderStreamlinedRoutes();
 
@@ -400,9 +405,6 @@ async function findRoute() {
 // ============================================================================================
 // Route-card helpers: peak-hazard card, factor chips, structured segments, "locate on map"
 // ============================================================================================
-// Pixels of map hidden under the open right dock (0 on phones / when the dock is absent); used to pad fits.
-const dockReserve = () => (window.SRO_DOCK && window.SRO_DOCK.reserve()) || 0;
-
 function escHtml(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
@@ -518,7 +520,7 @@ function parseSegment(seg) {
 }
 const fmtPts = (p) => `${p >= 0 ? "+" : "\u2212"}${Math.abs(Math.round(p))} pts`;
 
-function segmentsAccordionHtml(key, segs, cut, open) {
+function segmentsAccordionHtml(key, segs, cut) {
   const cards = segs.map((seg, i) => {
     const p = parseSegment(seg);
     const band = p.score >= cut.high ? "high" : "elevated";
@@ -536,16 +538,16 @@ function segmentsAccordionHtml(key, segs, cut, open) {
   return `
     <div class="accordion-header" onclick="toggleAccordion(this)">
       <span>Highlighted Route Segments (${segs.length})</span>
-      <span class="chevron">${open ? "\u25b2" : "\u25bc"}</span>
+      <span class="chevron">\u25bc</span>
     </div>
-    <div id="seg-accordion-body" class="accordion-body" style="display: ${open ? "flex" : "none"};">${cards}</div>`;
+    <div id="seg-accordion-body" class="accordion-body" style="display: none;">${cards}</div>`;
 }
 
 // "Locate on map": fly to a stretch and flash a cyan highlight for a few seconds.
 let locateLayer = null, locateTimer = null;
 function locateCoords(coords) {
   if (!coords || !coords.length) return;
-  map.flyToBounds(L.latLngBounds(coords), { maxZoom: 18, paddingTopLeft: [90, 90], paddingBottomRight: [90 + dockReserve(), 90], duration: 0.7 });
+  map.flyToBounds(L.latLngBounds(coords), { maxZoom: 18, padding: [90, 90], duration: 0.7 });
   if (locateLayer) map.removeLayer(locateLayer);
   locateLayer = L.featureGroup([
     L.polyline(coords, { color: "#22d3ee", weight: 18, opacity: 0.35, lineCap: "round", interactive: false }),
@@ -608,8 +610,6 @@ function renderStreamlinedRoutes() {
   html += `</div>`;
 
   // Render Details for Active Tab
-  let dockHtml = "";                       // deep analytics -> right dock (#dock-route-body)
-  const dockEl = document.getElementById("dock-route-body");
   const cur = latestRoutesData[activeRouteKey];
   if (cur) {
     const avgScore = Math.round(cur.avg_risk ?? cur.avg_insecurity ?? 0);
@@ -617,8 +617,8 @@ function renderStreamlinedRoutes() {
     const riskColor = avgScore >= 60 ? "#f43f5e" : (avgScore >= 25 ? "#f59e0b" : "#14b8a6");
     const peakColor = peakScore >= 60 ? "#f43f5e" : (peakScore >= 30 ? "#f59e0b" : "#14b8a6");
 
-    dockHtml += `
-      <div class="route-stats-grid">
+    html += `
+      <div class="route-stats-grid" id="route-stats-grid">
         <div class="route-stat-item">
           <span class="stat-label">Distance</span>
           <span class="stat-val">${cur.distance_m.toFixed(0)} m</span>
@@ -634,23 +634,22 @@ function renderStreamlinedRoutes() {
       </div>
     `;
 
+    // 24-hour sparkline + time scrubber (markup only; charts are mounted after the innerHTML swap below)
+    if (window.SRO) html += window.SRO.diurnalMarkup();
+
     // Peak-hazard HUD card -> calm glass factor chips -> structured highlighted segments
     const cut = (window.SRO && window.SRO.RISK_CUT) || { elevated: 60, high: 85 };
     const peak = cur.peak_segment;
     const showPeak = !!(peak && Number(peak.risk_score) >= cut.elevated);
-    if (showPeak) dockHtml += peakCardHtml(activeRouteKey, peak);
+    if (showPeak) html += peakCardHtml(activeRouteKey, peak);
 
-    dockHtml += factorChipsHtml(cur.summary_bullets || cur.reasons || [], showPeak);
-
-    // 24-hour sparkline + time scrubber (markup only; charts are mounted after the innerHTML swap below)
-    if (window.SRO) dockHtml += window.SRO.diurnalMarkup();
+    html += factorChipsHtml(cur.summary_bullets || cur.reasons || [], showPeak);
 
     const highRisk = cur.high_risk_segments || cur.peak_segments || [];
-    if (highRisk.length > 0) dockHtml += segmentsAccordionHtml(activeRouteKey, highRisk, cut, !!dockEl);
+    if (highRisk.length > 0) html += segmentsAccordionHtml(activeRouteKey, highRisk, cut);
   }
 
-  // Inject content cleanly. Without the dock (older template) everything stays in the one panel, as before.
-  if (dockEl) dockEl.innerHTML = dockHtml; else html += dockHtml;
+  // Inject content cleanly
   if (preserveHeader) {
     target.innerHTML = `<h2>4. Routes</h2>` + html;
   } else {

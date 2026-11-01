@@ -2,304 +2,663 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Spatio-Temporal Safe Route Optimizer</title>
+  <title>SafeRoute AI &middot; Spatio-Temporal Safe Route Optimizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#09090b">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet.MiniMap (overview map, bottom-right) -->
+  <!-- Leaflet.MiniMap (overview map, bottom-right of the map) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  <!--
+    Layout:  [ #sidebar  320px ] [ #map-wrap  flex ] [ #showcase-deck  440px ]
+    Every id below is either used by the backend-facing JS (app.js / enhancements.js / diagnostics.js)
+    or by the deck script at the bottom of this file.
+  -->
   <div id="app">
-    <aside id="sidebar">
-      <h1>&#128737;&#65039; Safe Route Optimizer</h1>
-      <button id="diag-btn" class="secondary" type="button">Model diagnostics</button>
 
-      <section class="panel">
-        <h2>1. Area</h2>
-        <label for="place-input">Place name</label>
-        <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
-        <label for="dist-input">Coverage radius (m)</label>
-        <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100">
-        <p class="hint">Larger radius = more ground covered (like a Google Maps
-          search area), but a slower first-time download and training pass.
-          Capped at 5000 m to keep the pedestrian network download and
-          model training practical.</p>
-        <button id="load-area-btn">Load Area</button>
-        <p id="area-status" class="status"></p>
-      </section>
-
-      <section class="panel">
-        <h2>2. Locations</h2>
-        <label for="start-input">Start location</label>
-        <div class="input-row">
-          <input id="start-input" type="text" placeholder="Leave blank to use the area centre" disabled title="Load an area first">
-          <button id="set-start-btn" class="secondary" disabled title="Load an area first">Set</button>
-          <button type="button" id="pick-start-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick start on the map">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
-          </button>
-        </div>
-
-        <label for="dest-input">Destination</label>
-        <div class="input-row">
-          <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
-          <button id="set-dest-btn" class="secondary" disabled title="Load an area first">Set</button>
-          <button type="button" id="pick-dest-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick destination on the map">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
-          </button>
-        </div>
-
-        <!-- Quick-select landmark pills (filled by enhancements.js from GET /api/landmarks) -->
-        <div class="pill-toolbar">
-          <span class="pill-label">Quick pick</span>
-          <div class="seg" id="pill-target" role="group" aria-label="Set landmark as">
-            <button type="button" data-target="dest" class="active">Destination</button>
-            <button type="button" data-target="start">Start</button>
+    <!-- =============================== LEFT CONTROL RAIL =============================== -->
+    <aside id="sidebar" class="left-rail" aria-label="Controls">
+      <header class="rail-head">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">&#128737;&#65039;</span>
+          <div>
+            <h1>SafeRoute <b>AI</b></h1>
+            <small>Spatio-temporal safe routing</small>
           </div>
         </div>
-        <div id="landmark-pills" class="pill-row" aria-label="Quick-select landmarks">
-          <span class="pill-hint">Load an area to see landmarks.</span>
-        </div>
-        <p id="location-status" class="status"></p>
-      </section>
+        <button id="diag-btn" class="secondary" type="button">&#128202; Model Diagnostics</button>
+      </header>
 
-      <section class="panel">
-        <h2>3. Route settings</h2>
-        <label for="hour-slider">Time of day: <span id="hour-value">12</span>:00</label>
-        <input id="hour-slider" type="range" min="0" max="23" value="12">
-        <p class="hint">Defaults to your device's current local hour. Move it to plan for a
-          different time -- the risk model runs entirely on hour-of-day patterns
-          (typical lighting/activity by hour), not live conditions, so "future" hours
-          are just as valid a query as "now".</p>
+      <div class="rail-scroll">
+        <!-- 1 / Area loader -->
+        <section class="panel" id="panel-area">
+          <h2><span class="step">1</span>Area</h2>
+          <label for="place-input">Place name</label>
+          <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
+          <label for="dist-input">Coverage radius (m)</label>
+          <div class="input-row">
+            <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100"
+                   title="Larger radius = more ground covered, but a slower first-time download and training pass. Capped at 5000 m.">
+            <button id="load-area-btn" type="button">Load Area</button>
+          </div>
+          <p id="area-status" class="status"></p>
+        </section>
 
-        <label for="lambda-slider">Distance &harr; Safety (&lambda; = <span id="lambda-value">0.50</span>)</label>
-        <input id="lambda-slider" type="range" min="0" max="1" value="0.5" step="0.05">
-        <div class="slider-labels"><span>Safest</span><span>Shortest</span></div>
+        <!-- 2 / Origin & destination -->
+        <section class="panel" id="panel-od">
+          <h2><span class="step">2</span>Origin &amp; Destination</h2>
 
-        <button id="find-route-btn" disabled>Find Route</button>
+          <label for="start-input">Start location</label>
+          <div class="input-row">
+            <input id="start-input" type="text" placeholder="Blank = area centre" disabled title="Load an area first">
+            <button id="set-start-btn" class="secondary" type="button" disabled title="Load an area first">Set</button>
+            <button type="button" id="pick-start-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick start on the map">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+            </button>
+          </div>
+
+          <label for="dest-input">Destination</label>
+          <div class="input-row">
+            <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
+            <button id="set-dest-btn" class="secondary" type="button" disabled title="Load an area first">Set</button>
+            <button type="button" id="pick-dest-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick destination on the map">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+            </button>
+          </div>
+
+          <div class="od-tools">
+            <button type="button" id="swap-btn" class="ghost" title="Swap start and destination">&#8645; Swap</button>
+            <button type="button" id="clear-btn" class="ghost" title="Clear destination and routes">&#10005; Clear</button>
+          </div>
+
+          <!-- Quick-select landmark pills (filled by enhancements.js from GET /api/landmarks) -->
+          <div id="pills">
+            <div class="pill-toolbar">
+              <span class="pill-label">Quick pick</span>
+              <div class="seg" id="pill-target" role="group" aria-label="Set landmark as">
+                <button type="button" data-target="dest" class="active">Destination</button>
+                <button type="button" data-target="start">Start</button>
+              </div>
+            </div>
+            <div id="landmark-pills" class="pill-row" aria-label="Quick-select landmarks">
+              <span class="pill-hint">Load an area to see landmarks.</span>
+            </div>
+          </div>
+          <p id="location-status" class="status"></p>
+        </section>
+
+        <!-- 3 / Route settings -->
+        <section class="panel" id="panel-settings">
+          <h2 title="The risk model runs on hour-of-day patterns (lighting, activity), not live conditions, so any hour is a valid query."><span class="step">3</span>Route settings</h2>
+
+          <label for="hour-slider">Time of day: <span id="hour-value">12</span>:00</label>
+          <input id="hour-slider" type="range" min="0" max="23" value="12">
+          <div class="slider-labels"><span>00:00</span><span>12:00</span><span>23:00</span></div>
+
+          <label for="lambda-slider">Distance &harr; Safety (<span class="nocase">&lambda;</span> = <span id="lambda-value">0.50</span>)</label>
+          <input id="lambda-slider" type="range" min="0" max="1" value="0.5" step="0.05">
+          <div class="slider-labels"><span>Safest</span><span>Shortest</span></div>
+
+        </section>
+      </div>
+
+      <footer class="rail-foot">
+        <button id="find-route-btn" type="button" disabled>Find Route</button>
         <p id="route-status" class="status"></p>
-      </section>
-
-      <section class="panel" id="results-panel" style="display:none;">
-        <h2>4. Routes</h2>
-        <div class="route-row" id="row-shortest">
-          <span class="swatch" style="background:#f43f5e; color:#f43f5e;"></span>
-          <span class="route-name">Shortest</span>
-          <span class="metrics"></span>
-        </div>
-        <div class="route-row" id="row-balanced">
-          <span class="swatch" style="background:#eab308; color:#eab308;"></span>
-          <span class="route-name">Balanced</span>
-          <span class="metrics"></span>
-        </div>
-        <div class="route-row" id="row-safest">
-          <span class="swatch" style="background:#14b8a6; color:#14b8a6;"></span>
-          <span class="route-name">Safest</span>
-          <span class="metrics"></span>
-        </div>
-      </section>
+      </footer>
     </aside>
 
-    <div id="map-wrap">
+    <!-- ===================================== MAP ===================================== -->
+    <main id="map-wrap">
       <div id="map"></div>
-      <div id="map-toast" role="status" aria-live="polite"></div>
 
-
-      <!-- ===== Right Deep Inspector Deck (collapsible dock) =====
-           Route Analysis tab: filled by renderStreamlinedRoutes() into #dock-route-body.
-           Area Inspector tab: hosts the existing #inspector element (moved here, unchanged). -->
-      <button type="button" id="dock-toggle" aria-controls="insight-dock" aria-expanded="false" title="Toggle inspector dock" aria-label="Toggle inspector dock">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
+      <button id="inspect-toggle" type="button" aria-pressed="false" title="When ON, click inside the dashed boundary to inspect an area">
+        <span class="it-dot"></span><span class="it-label">&#128269; Inspect Area Mode</span><span class="it-state">OFF</span>
       </button>
-      <aside id="insight-dock" aria-hidden="true" aria-label="Deep inspector deck">
-        <header class="dock-head">
-          <div class="dock-title-row">
-            <span class="dock-eyebrow">Deep Inspector</span>
-            <button type="button" id="dock-close" class="icon-btn" aria-label="Close inspector dock">&times;</button>
-          </div>
-          <div class="dock-tabs" role="tablist" aria-label="Inspector view">
-            <button type="button" id="dock-tab-route" class="dock-tab active" role="tab" aria-selected="true" aria-controls="dock-view-route">Route analysis</button>
-            <button type="button" id="dock-tab-area" class="dock-tab" role="tab" aria-selected="false" aria-controls="dock-view-area" tabindex="-1">Area inspector</button>
-          </div>
-        </header>
 
-        <div class="dock-scroll" id="dock-scroll">
-          <section id="dock-view-route" class="dock-view" role="tabpanel" aria-labelledby="dock-tab-route">
-            <div id="dock-route-body"></div>
-            <div class="dock-empty">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
-              <strong>No route yet</strong>
-              <span>Set a destination and press <em>Find Route</em>. Peak hazard, risk factors, the 24-hour profile and flagged segments appear here.</span>
+      <button id="deck-reopen" type="button" title="Reopen the route showcase">&#9776; Route showcase</button>
+      <div id="map-toast" role="status" aria-live="polite"></div>
+    </main>
+
+    <!-- ============================ RIGHT SHOWCASE DECK (440px) ============================ -->
+    <aside id="showcase-deck" data-mode="routes" aria-hidden="true" aria-label="Route showcase">
+      <div class="deck-body">
+
+        <!-- ---- View A: route analysis (3 tabs) ---- -->
+        <section id="view-routes" class="deck-view">
+          <header class="deck-head">
+            <div>
+              <div class="deck-eyebrow">Route Showcase</div>
+              <h2 class="deck-title">Safety-aware routing</h2>
+              <div id="deck-sub" class="deck-sub">&mdash;</div>
             </div>
-          </section>
+            <button type="button" id="deck-close" class="icon-btn" aria-label="Close showcase">&times;</button>
+          </header>
 
-          <section id="dock-view-area" class="dock-view hidden" role="tabpanel" aria-labelledby="dock-tab-area">
-      <!-- Area Safety Inspector: slide-out glass drawer (opened by clicking inside the boundary) -->
-      <aside id="inspector" aria-hidden="true" aria-label="Area safety inspector">
-        <header class="insp-head">
-          <div>
-            <div class="insp-eyebrow">Area Safety Inspector</div>
-            <div id="insp-street" class="insp-street">&mdash;</div>
-          </div>
-          <button type="button" id="insp-close" class="icon-btn" aria-label="Close inspector">&times;</button>
-        </header>
+          <nav id="deck-tabs" class="deck-tabs" role="tablist" aria-label="Showcase sections">
+            <button type="button" class="deck-tab active" role="tab" id="tab-routes"   data-tab="routes"   aria-selected="true"  aria-controls="pane-routes"><span class="tab-ico">&#128506;&#65039;</span>Routes &amp; Deltas</button>
+            <button type="button" class="deck-tab"        role="tab" id="tab-cpted"    data-tab="cpted"    aria-selected="false" aria-controls="pane-cpted" tabindex="-1"><span class="tab-ico">&#9888;&#65039;</span>CPTED Bottlenecks</button>
+            <button type="button" class="deck-tab"        role="tab" id="tab-temporal" data-tab="temporal" aria-selected="false" aria-controls="pane-temporal" tabindex="-1"><span class="tab-ico">&#128200;</span>24-Hour Dynamics</button>
+          </nav>
 
-        <div class="insp-body">
-          <div id="insp-loading" class="insp-state" hidden>
-            <div class="skeleton sk-badge"></div><div class="skeleton sk-radar"></div><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div>
-          </div>
-          <div id="insp-error" class="insp-state insp-error" hidden></div>
-          <div id="insp-oob" class="insp-state" hidden></div>
+          <div class="deck-panes">
 
-          <div id="insp-content" hidden>
-            <div class="grade-row">
-              <div id="grade-badge" class="grade-badge" title="Local safety grade | risk score (lower risk = better grade)">
-                <span class="grade-letter">&ndash;</span><span class="grade-sep">|</span><span class="grade-score">&ndash;</span>
+            <!-- Tab 1: Routes & Deltas -->
+            <div class="deck-pane active" id="pane-routes" data-pane="routes" role="tabpanel" aria-labelledby="tab-routes">
+              <div class="section-title">Choose a route <span class="dim">tap a card to compare on the map</span></div>
+              <div id="route-selector" role="radiogroup" aria-label="Route options"></div>
+
+              <div class="section-title">Quick metrics <span class="count" id="metrics-route-name"></span></div>
+              <div id="route-stats-grid">
+                <div class="route-stat-item"><span class="stat-label">Distance</span><span class="stat-val" id="st-dist">&mdash;</span></div>
+                <div class="route-stat-item"><span class="stat-label">Walk time</span><span class="stat-val" id="st-time">&mdash;</span></div>
+                <div class="route-stat-item"><span class="stat-label">Avg risk</span><span class="stat-val" id="st-avg">&mdash;</span></div>
+                <div class="route-stat-item"><span class="stat-label">Peak hazard</span><span class="stat-val" id="st-peak">&mdash;</span></div>
+                <div class="route-stat-item"><span class="stat-label">% elevated</span><span class="stat-val" id="st-elev">&mdash;</span></div>
+                <div class="route-stat-item"><span class="stat-label">&Delta; risk vs shortest</span><span class="stat-val" id="st-delta">&mdash;</span></div>
               </div>
-              <div class="grade-meta">
-                <div id="grade-band" class="grade-band">&nbsp;</div>
-                <div id="grade-hour" class="dim"></div>
+              <p class="grid-caption">Risk is a relative 0&ndash;100 index from the CPTED-aware model (lower is safer). Walk time assumes ~5 km/h. Deltas compare each route with the Shortest baseline.</p>
+            </div>
+
+            <!-- Tab 2: CPTED bottlenecks -->
+            <div class="deck-pane" id="pane-cpted" data-pane="cpted" role="tabpanel" aria-labelledby="tab-cpted">
+              <span class="active-route-chip" id="chip-cpted"><i></i><span>&mdash;</span></span>
+              <div id="peak-hazard-card"></div>
+
+              <div class="section-title">Why this route scores the way it does</div>
+              <div id="route-factors-box"></div>
+
+              <div class="section-title">Highlighted route segments <span class="count" id="seg-count"></span></div>
+              <div id="route-segments-container"></div>
+            </div>
+
+            <!-- Tab 3: Temporal dynamics -->
+            <div class="deck-pane" id="pane-temporal" data-pane="temporal" role="tabpanel" aria-labelledby="tab-temporal">
+              <span class="active-route-chip" id="chip-temporal"><i></i><span>&mdash;</span></span>
+              <div class="diurnal" id="diurnal-block">
+                <div class="diurnal-head">
+                  <span class="diurnal-title">24-hour risk profile</span>
+                  <span class="diurnal-clock" id="diurnal-clock"><span id="diurnal-icon"></span> 12:00</span>
+                </div>
+                <div class="spark-wrap">
+                  <canvas id="diurnal-chart" aria-label="Route risk by hour of day"></canvas>
+                  <div class="diurnal-msg" id="diurnal-msg">Compute a route to see its 24-hour profile.</div>
+                </div>
+                <input id="scrub-slider" class="scrub-slider" type="range" min="0" max="23" step="1" value="12" aria-label="Preview hour of day" disabled>
+                <div class="scrub-ticks"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
+                <div class="diurnal-live" id="diurnal-live"></div>
+                <div class="diurnal-actions">
+                  <span class="legend-bar" title="Low &rarr; elevated &rarr; high risk"><i>low</i><i>high</i></span>
+                  <button type="button" class="ghost" id="apply-hour-btn" disabled>Re-optimise path for this hour</button>
+                </div>
+              </div>
+              <p class="temporal-note">Drag the scrubber to recolour the route on the map for any hour. The same streets can swing from safe to hazardous after dark &mdash; re-optimise to let the router pick a different path.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- View B: inspection overlay (slides over View A) ---- -->
+        <section id="view-inspect" class="deck-view" aria-label="Area inspection">
+          <aside id="inspector" aria-hidden="true" aria-label="Area safety inspector">
+            <header class="insp-head">
+              <div>
+                <div class="insp-eyebrow">Area Safety Inspector</div>
+                <div id="insp-street" class="insp-street">&mdash;</div>
+              </div>
+              <button type="button" id="insp-close" class="icon-btn" aria-label="Close inspector">&times;</button>
+            </header>
+
+            <div class="insp-body">
+              <div id="insp-loading" class="insp-state" hidden>
+                <div class="skeleton sk-badge"></div><div class="skeleton sk-radar"></div><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div>
+              </div>
+              <div id="insp-error" class="insp-state insp-error" hidden></div>
+              <div id="insp-oob" class="insp-state" hidden></div>
+
+              <div id="insp-content" hidden>
+                <div class="grade-row">
+                  <div id="grade-badge" class="grade-badge" title="Local safety grade | risk score (lower risk = better grade)">
+                    <span class="grade-letter">&ndash;</span><span class="grade-sep">|</span><span class="grade-score">&ndash;</span>
+                  </div>
+                  <div class="grade-meta">
+                    <div id="grade-band" class="grade-band">&nbsp;</div>
+                    <div id="grade-hour" class="dim"></div>
+                  </div>
+                </div>
+
+                <div class="insp-actions">
+                  <button type="button" class="ghost sm" id="insp-set-start">Set as start</button>
+                  <button type="button" class="ghost sm" id="insp-set-dest">Set as destination</button>
+                </div>
+
+                <div class="insp-section-title">CPTED profile <span class="dim">outer ring = safer</span></div>
+                <div class="radar-wrap"><canvas id="radar-chart"></canvas></div>
+                <ul id="cpted-list" class="cpted-list"></ul>
+
+                <div class="insp-section-title">Nearest safe havens <span class="dim" id="haven-radius"></span></div>
+                <div id="haven-list"></div>
               </div>
             </div>
+          </aside>
+        </section>
 
-            <div class="insp-actions">
-              <button type="button" class="ghost sm" id="insp-set-start">Set as start</button>
-              <button type="button" class="ghost sm" id="insp-set-dest">Set as destination</button>
-            </div>
-
-            <div class="insp-section-title">CPTED profile <span class="dim">outer ring = safer</span></div>
-            <div class="radar-wrap"><canvas id="radar-chart"></canvas></div>
-            <ul id="cpted-list" class="cpted-list"></ul>
-
-            <div class="insp-section-title">Nearest safe havens <span class="dim" id="haven-radius"></span></div>
-            <div id="haven-list"></div>
-          </div>
-        </div>
-      </aside>
-            <div class="dock-empty">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
-              <strong>Nothing inspected</strong>
-              <span>Click anywhere inside the dashed boundary on the map to see its safety grade, CPTED profile and nearest safe havens.</span>
-            </div>
-          </section>
-        </div>
-      </aside>
-    </div>
+      </div>
+    </aside>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- Leaflet.MiniMap plugin (must load after Leaflet) -->
   <script src="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.js"></script>
-  <!-- Chart.js: inspector radar chart + 24-hour sparkline -->
+  <!-- Chart.js: inspector radar chart + 24-hour profile -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <!-- Split-dock controller: presentational only. Opens/closes the right deck, switches its two views,
-       keeps Leaflet sized, and mirrors the existing #inspector open/close state. Touches no other script's state. -->
-  <script>
-  (function () {
-    "use strict";
-    var MOBILE = window.matchMedia("(max-width: 820px)");
-    var wrap = document.getElementById("map-wrap");
-    var dock = document.getElementById("insight-dock");
-    var toggle = document.getElementById("dock-toggle");
-    var tabs = { route: document.getElementById("dock-tab-route"), area: document.getElementById("dock-tab-area") };
-    var views = { route: document.getElementById("dock-view-route"), area: document.getElementById("dock-view-area") };
-    var insp = document.getElementById("inspector");
-    var results = document.getElementById("results-panel");
-    if (!wrap || !dock || !toggle) return;
-
-    var state = { view: "route", hasRoute: false }, settleTimer = 0;
-    var isOpen = function () { return wrap.classList.contains("dock-open"); };
-
-    function resizeChart() {                       // Chart.js needs a nudge if its canvas was hidden while (re)built
-      if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") return;
-      requestAnimationFrame(function () {
-        var c = Chart.getChart("diurnal-chart"); if (c) { c.resize(); c.update("none"); }
-        var r = Chart.getChart("radar-chart");   if (r) { r.resize(); }
-      });
-    }
-    function settle() {                            // after the 0.25s slide: re-measure the map and the charts
-      clearTimeout(settleTimer);
-      settleTimer = setTimeout(function () {
-        if (typeof map !== "undefined" && map && map.invalidateSize) map.invalidateSize({ pan: false });
-        resizeChart();
-      }, 280);
-    }
-
-    function setView(v) {
-      if (!views[v]) return;
-      state.view = v;
-      Object.keys(views).forEach(function (k) {
-        var on = k === v;
-        views[k].classList.toggle("hidden", !on);
-        tabs[k].classList.toggle("active", on);
-        tabs[k].setAttribute("aria-selected", on ? "true" : "false");
-        tabs[k].tabIndex = on ? 0 : -1;
-      });
-      var sc = document.getElementById("dock-scroll"); if (sc) sc.scrollTop = 0;
-      resizeChart();
-    }
-    function open(view) {
-      if (view) setView(view);
-      wrap.classList.add("dock-open");
-      dock.setAttribute("aria-hidden", "false");
-      toggle.setAttribute("aria-expanded", "true");
-      settle();
-    }
-    function close() {
-      if (!isOpen()) return;
-      wrap.classList.remove("dock-open");          // first, so the inspector observer below ignores the close it causes
-      dock.setAttribute("aria-hidden", "true");
-      toggle.setAttribute("aria-expanded", "false");
-      if (insp && insp.classList.contains("open")) { var x = document.getElementById("insp-close"); if (x) x.click(); }
-      settle();
-    }
-
-    toggle.addEventListener("click", function () { isOpen() ? close() : open(); });
-    document.getElementById("dock-close").addEventListener("click", close);
-    ["route", "area"].forEach(function (k) {
-      tabs[k].addEventListener("click", function () { setView(k); });
-      tabs[k].addEventListener("keydown", function (e) {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-        e.preventDefault(); var n = k === "route" ? "area" : "route"; setView(n); tabs[n].focus();
-      });
-    });
-
-    // Area Safety Inspector: enhancements.js toggles .open on #inspector; the dock follows.
-    if (insp) {
-      var wasOpen = insp.classList.contains("open");
-      new MutationObserver(function () {
-        var now = insp.classList.contains("open");
-        if (now === wasOpen) return;
-        wasOpen = now;
-        if (now) open("area");
-        else if (isOpen()) { state.hasRoute ? setView("route") : close(); }
-      }).observe(insp, { attributes: true, attributeFilter: ["class"] });
-    }
-
-    // Route lifecycle: #results-panel is shown by findRoute() and hidden when a new area loads.
-    if (results) {
-      new MutationObserver(function () {
-        var shown = results.style.display !== "none";
-        if (shown === state.hasRoute) return;
-        state.hasRoute = shown;
-        if (!shown) {
-          var body = document.getElementById("dock-route-body"); if (body) body.innerHTML = "";
-          if (isOpen() && state.view === "route") close();
-        }
-      }).observe(results, { attributes: true, attributeFilter: ["style"] });
-    }
-
-    // Phones: dock is a bottom sheet, so the map is not padded for it.
-    window.SRO_DOCK = {
-      open: open, close: close, setView: setView, isOpen: isOpen,
-      toggle: function () { isOpen() ? close() : open(); },
-      reserve: function () { return MOBILE.matches ? 0 : (dock.offsetWidth || 420); }   // px of map hidden under the open dock
-    };
-  })();
-  </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   <script src="{{ url_for('static', filename='enhancements.js') }}"></script>
   <script src="{{ url_for('static', filename='diagnostics.js') }}"></script>
+
+  <!-- ================== Showcase Deck coordination (loads AFTER app.js / enhancements.js) ==================
+       Overrides renderStreamlinedRoutes() -> renderRoutes() and selectRoute() so results land in the static
+       deck panes. Each paint function only ever writes into ITS OWN container, so nothing wipes a node that
+       another module (Chart.js canvases, the scrubber, the inspector) is holding on to.                    -->
+  {% raw %}
+  <script>
+  (function () {
+    "use strict";
+
+    const $ = (id) => document.getElementById(id);
+    const deck = $("showcase-deck");
+    const insp = $("inspector");
+    const KEYS = ["shortest", "balanced", "safest"];
+    const TABS = ["routes", "cpted", "temporal"];
+    const NAMES = { shortest: "Shortest", balanced: "Balanced", safest: "Safest" };
+    const BADGE = { shortest: "Fastest", balanced: "Compromise", safest: "Lowest exposure" };
+    const S = { open: false, mode: "routes", tab: "routes", hasRoutes: false, timer: 0 };
+
+    // ------------------------------------------------------------------ small helpers
+    const n0 = (v) => Math.round(Number(v) || 0);
+    const fmt = (v) => n0(v).toLocaleString("en-US");
+    const mins = (m) => Math.max(1, Math.round((Number(m) || 0) / 83));          // ~5 km/h
+    const cut = () => (window.SRO && window.SRO.RISK_CUT) || { elevated: 60, high: 85 };
+    const tone = (s) => (s >= cut().elevated ? "rose" : s >= 30 ? "amber" : "teal");
+    const avgOf = (r) => Number(r.avg_risk ?? r.avg_insecurity ?? 0);
+    const peakOf = (r) => Number(r.peak_segment_risk ?? r.peak_risk ?? avgOf(r));
+    const signed = (v, unit) => `${v > 0.4 ? "+" : v < -0.4 ? "\u2212" : "\u00b1"}${Math.abs(Math.round(v))}${unit || ""}`;
+    const setHtml = (id, html, cls) => { const el = $(id); if (!el) return; el.innerHTML = html; if (cls !== undefined) el.className = "stat-val " + cls; };
+
+    function toast(msg, ms) {
+      const el = $("map-toast"); if (!el) return;
+      el.textContent = msg; el.classList.add("show");
+      clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove("show"), ms || 3000);
+    }
+
+    // ------------------------------------------------------------------ deck open / close / mode
+    function resizeCharts() {
+      if (typeof Chart === "undefined") return;
+      ["diurnal-chart", "radar-chart"].forEach((id) => { const c = Chart.getChart($(id)); if (c) c.resize(); });
+    }
+
+    function fitRoutes() {
+      const groups = Object.values(routeLayers).map((e) => e.group).filter(Boolean);
+      if (!groups.length) return;
+      const b = L.featureGroup(groups).getBounds();
+      if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+    }
+
+    /** Open/close the deck and tell Leaflet its container changed size. */
+    function setDeckOpen(open, opts) {
+      map.invalidateSize({ animate: false });
+      if (S.open === open) return;
+      S.open = open;
+      deck.classList.toggle("open", open);
+      deck.setAttribute("aria-hidden", String(!open));
+      document.body.classList.toggle("deck-open", open);
+      clearTimeout(S.timer);
+      S.timer = setTimeout(() => {                         // after the 340 ms width transition
+        map.invalidateSize({ animate: false });
+        if (open && opts && opts.refit) fitRoutes();       // routes were fitted to the wider map; re-fit to the narrower one
+        resizeCharts();
+      }, 360);
+    }
+
+    function setMode(mode) {
+      S.mode = mode;
+      deck.dataset.mode = mode;
+      insp.setAttribute("aria-hidden", String(mode !== "inspect"));
+      if (mode === "inspect") setTimeout(resizeCharts, 360);
+    }
+
+    function closeInspector() { if (insp.classList.contains("open")) $("insp-close").click(); }
+
+    // The inspector (enhancements.js) only toggles `.open` on #inspector -- mirror that into the deck.
+    new MutationObserver(() => {
+      if (insp.classList.contains("open")) { setMode("inspect"); setDeckOpen(true); }
+      else { setMode("routes"); if (!S.hasRoutes) setDeckOpen(false); }
+    }).observe(insp, { attributes: true, attributeFilter: ["class"] });
+
+    // Belt and braces: any layout change of the map column re-measures Leaflet.
+    if (window.ResizeObserver) new ResizeObserver(() => map.invalidateSize({ animate: false })).observe($("map-wrap"));
+
+    $("deck-close").addEventListener("click", () => setDeckOpen(false));
+    $("deck-reopen").addEventListener("click", () => { setMode("routes"); setDeckOpen(true); });
+
+    // ------------------------------------------------------------------ tabs
+    function switchShowcaseTab(name) {
+      if (!TABS.includes(name)) name = "routes";
+      S.tab = name;
+      document.querySelectorAll("#deck-tabs .deck-tab").forEach((b) => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle("active", on); b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1;
+      });
+      document.querySelectorAll(".deck-pane").forEach((p) => {
+        const on = p.dataset.pane === name;
+        p.classList.toggle("active", on); p.setAttribute("aria-hidden", String(!on));
+      });
+      if (name === "temporal") requestAnimationFrame(resizeCharts);   // canvas was display-less while hidden
+    }
+    window.switchShowcaseTab = switchShowcaseTab;
+
+    $("deck-tabs").addEventListener("click", (e) => { const b = e.target.closest(".deck-tab"); if (b) switchShowcaseTab(b.dataset.tab); });
+    $("deck-tabs").addEventListener("keydown", (e) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const i = TABS.indexOf(S.tab), next = TABS[(i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+      switchShowcaseTab(next); $("tab-" + next).focus();
+    });
+
+    // ------------------------------------------------------------------ Tab 1: route cards + metrics
+    function deltaFor(key, r) {
+      const base = latestRoutesData && latestRoutesData.shortest;
+      if (!base || key === "shortest") return null;
+      const dM = r.distance_m - base.distance_m, dR = avgOf(r) - avgOf(base);
+      return { dM, dPct: base.distance_m ? (100 * dM) / base.distance_m : 0, dR, rPct: avgOf(base) ? (100 * dR) / avgOf(base) : 0 };
+    }
+
+    function tradeoffHtml(key, r) {
+      const d = deltaFor(key, r);
+      if (!d) return `<b>Quickest walk</b> (~${mins(r.distance_m)} min) with no safety weighting \u2014 average risk ${n0(avgOf(r))}/100.`;
+      if (d.dR > -1) return `<b>No safety gain</b> over the shortest route here${d.dM > 15 ? " \u2014 the extra distance isn\u2019t buying lower risk." : "."}`;
+      if (d.dM <= -15) return `<b>Shorter and safer</b> than the baseline: ${signed(d.dR, " pts")} average risk.`;
+      if (d.dM < 15) return `<b>Nearly the same distance</b>, but ${Math.abs(n0(d.dR))} pts lower average risk (${signed(d.rPct, "%")}).`;
+      return `<b>${fmt(d.dM)} m longer</b> (~${mins(d.dM)} min extra) to cut average risk by <b>${Math.abs(n0(d.dR))} pts (${Math.abs(n0(d.rPct))}%)</b>.`;
+    }
+
+    function paintSelector() {
+      const host = $("route-selector");
+      if (!host || !latestRoutesData) return;
+      host.innerHTML = KEYS.filter((k) => latestRoutesData[k]).map((k) => {
+        const r = latestRoutesData[k], avg = avgOf(r), t = tone(avg), d = deltaFor(k, r), on = k === activeRouteKey;
+        const chips = d
+          ? `<span class="delta ${d.dM > 15 ? "cost" : ""}">${signed(d.dM, " m")} (${signed(d.dPct, "%")})</span>` +
+            `<span class="delta ${d.dR <= -1 ? "good" : d.dR >= 1 ? "bad" : ""}">${signed(d.dR, " risk")}</span>`
+          : `<span class="delta">Baseline</span>`;
+        return `
+          <div class="route-card k-${k}${on ? " active" : ""}" role="radio" aria-checked="${on}" tabindex="0" data-key="${k}">
+            <div class="rc-top"><span class="rc-name"><i class="rc-dot"></i>${NAMES[k]}</span><span class="rc-badge">${BADGE[k]}</span></div>
+            <div class="rc-metrics">
+              <div><span class="rc-label">Distance</span><span class="metric-num">${fmt(r.distance_m)}<small>m</small></span></div>
+              <div><span class="rc-label">Avg risk</span><span class="metric-num tone-${t}">${n0(avg)}<small>/100</small></span></div>
+              <div><span class="rc-label">Walk</span><span class="metric-num">~${mins(r.distance_m)}<small>min</small></span></div>
+            </div>
+            <div class="rc-riskbar"><i class="tone-${t}" style="width:${Math.max(3, Math.min(100, avg))}%"></i></div>
+            <div class="rc-deltas">${chips}</div>
+            <p class="rc-tradeoff">${tradeoffHtml(k, r)}</p>
+          </div>`;
+      }).join("");
+    }
+
+    function paintStats() {
+      const r = latestRoutesData && latestRoutesData[activeRouteKey];
+      if (!r) return;
+      const avg = avgOf(r), pk = peakOf(r), base = latestRoutesData.shortest;
+      $("metrics-route-name").textContent = NAMES[activeRouteKey];
+      setHtml("st-dist", `${fmt(r.distance_m)}<small> m</small>`);
+      setHtml("st-time", `~${mins(r.distance_m)}<small> min</small>`);
+      setHtml("st-avg", `${n0(avg)}<small>/100</small>`, "tone-" + tone(avg));
+      setHtml("st-peak", `${n0(pk)}<small>/100</small>`, "tone-" + tone(pk));
+      setHtml("st-elev", r.pct_elevated_length == null ? "n/a" : `${n0(r.pct_elevated_length)}<small>%</small>`);
+      if (!base || activeRouteKey === "shortest") setHtml("st-delta", "\u2014", "");
+      else { const dR = avg - avgOf(base); setHtml("st-delta", `${signed(dR)}<small> pts</small>`, dR <= -1 ? "tone-teal" : dR >= 1 ? "tone-rose" : ""); }
+    }
+
+    // ------------------------------------------------------------------ Tab 2: CPTED bottlenecks
+    const ICON = { police: "\u{1F6E1}\uFE0F", commercial: "\u{1F441}\uFE0F", hierarchy: "\u{1F6E3}\uFE0F", risk: "\u26A0\uFE0F", pos: "\u2713" };
+
+    function factorKind(key, text) {
+      const s = `${key || ""} ${text || ""}`.toLowerCase();
+      if (/police/.test(s)) return "police";
+      if (/shop|commercial|poi|frontage|storefront|eyes/.test(s)) return "commercial";
+      if (/road|highway|hierarchy|connectiv|junction|segment_length|segment length|footway|footpath|street|dead-end|dead_end/.test(s)) return "hierarchy";
+      return "risk";
+    }
+
+    function driverTagsHtml(peak) {
+      const mx = peak.micro_explanation || {};
+      let items = (mx.top_risk_factors || []).map((f) => ({
+        kind: factorKind(f.factor, f.text), label: shortFactor(f) || String(f.text || "").split(" (")[0], pts: f.points, title: f.text }));
+      (mx.top_positive_factors || []).slice(0, 1).forEach((f) => items.push({
+        kind: "pos", label: shortFactor(f) || String(f.text || "").split(" (")[0], pts: f.points, title: f.text }));
+      if (!items.some((i) => i.kind !== "pos")) {
+        items = (peak.reasons || []).map((t) => ({ kind: factorKind("", t), label: tagFromText(t) || String(t).slice(0, 34), title: t }));
+      }
+      const seen = new Set();
+      items = items.filter((i) => i.label && !seen.has(i.label) && seen.add(i.label)).slice(0, 6);
+      return items.map((i) =>
+        `<span class="factor-tag ${i.kind}" title="${escHtml(i.title || i.label)}">${ICON[i.kind]} ${escHtml(i.label)}` +
+        (Number.isFinite(Number(i.pts)) && i.pts !== null && i.pts !== undefined ? `<i>${fmtPts(Number(i.pts))}</i>` : "") + `</span>`).join("");
+    }
+
+    function peakCardHtml2(peak) {
+      const score = n0(peak.risk_score), c = cut(), calm = score < c.elevated;
+      const band = score >= c.high ? "High risk" : score >= c.elevated ? "Elevated risk" : "Moderate risk";
+      const hw = peak.highway ? prettyWord(peak.highway) : "";
+      const street = peak.street || peak.name || hw || "Unnamed street";
+      const tags = driverTagsHtml(peak);
+      return `
+        <div class="peak-card${calm ? " calm" : ""}" id="peak-card">
+          <div class="peak-head">
+            <div><span class="peak-title">${calm ? "Peak segment" : "Peak hazard \u00b7 bottleneck"}</span>
+              <h3 class="peak-street">${escHtml(street)}</h3></div>
+            <div class="peak-score">${score}<small>/100</small><span class="peak-band">${band}</span></div>
+          </div>
+          <div class="peak-meta">
+            <span class="glow-pill len">\u2194 ${n0(peak.length_m)} m stretch</span>
+            ${hw && hw !== street ? `<span class="glow-pill">${escHtml(hw)}</span>` : ""}
+          </div>
+          ${tags ? `<div class="peak-drivers-label">CPTED risk drivers</div><div class="factor-tags">${tags}</div>
+            <div class="tag-legend"><span style="--c:#3b82f6">Police proximity</span><span style="--c:#f59e0b">Commercial eyes</span><span style="--c:#8b5cf6">Street hierarchy</span></div>` : ""}
+          <button type="button" class="locate-btn" data-act="locate-peak">${CROSSHAIR_SVG}Locate on map</button>
+        </div>`;
+    }
+
+    function chipKind(t) {
+      t = String(t).toLowerCase();
+      if (/police/.test(t)) return { cls: "blue", icon: "\u{1F6E1}\uFE0F" };
+      if (/shop|commercial|frontage|storefront|eyes on|witness/.test(t)) return { cls: "amber", icon: "\u{1F441}\uFE0F" };
+      if (/night|dark|isolat|unlit/.test(t)) return { cls: "rose", icon: "\u26A0\uFE0F" };
+      if (/road|street|footpath|footway|path|junction|connect|dead-end|arterial|residential|hierarchy|highway|lane/.test(t)) return { cls: "purple", icon: "\u{1F6E3}\uFE0F" };
+      return { cls: "rose", icon: "\u26A0\uFE0F" };
+    }
+
+    function factorChipsHtml2(bullets, peakShown) {
+      const seen = new Set();
+      const items = bullets.filter((b) => {
+        const k = String(b).trim().toLowerCase();
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return !(peakShown && /^peak segment/.test(k));          // the bottleneck card already says this
+      });
+      if (!items.length) return `<div class="empty-note">No environmental explanations returned for this route.</div>`;
+      return `<div class="factor-list">` + items.map((b) => {
+        const k = chipKind(b);
+        return `<div class="factor-chip"><span class="chip-ico ${k.cls}">${k.icon}</span><span class="chip-text">${escHtml(b)}</span></div>`;
+      }).join("") + `</div>`;
+    }
+
+    function segCardsHtml(list) {
+      const c = cut();
+      const rows = list.map((seg, i) => ({ seg, i, p: parseSegment(seg) })).sort((a, b) => b.p.score - a.p.score);
+      return rows.map(({ i, p }, rank) => {
+        const tags = p.factors.map((f) =>
+          `<span class="seg-tag ${f.pos ? "pos" : ""}" title="${escHtml(f.text)}">` +
+          (f.pts !== null && f.pts !== undefined && !Number.isNaN(f.pts) ? `<i class="pts">${fmtPts(f.pts)}</i>` : "") +
+          `<span>${escHtml(f.text)}</span></span>`).join("");
+        return `
+          <div class="seg-card" role="button" tabindex="0" data-seg="${i}" title="Click to locate on map">
+            <div class="seg-head"><span><span class="seg-rank">#${rank + 1}</span><span class="seg-score ${p.score >= c.high ? "high" : "elevated"}">Risk ${p.score}/100</span></span><span class="seg-len">${p.length} m</span></div>
+            ${p.archetype ? `<div class="seg-context"><b>Context:</b> ${escHtml(p.archetype)}</div>` : ""}
+            ${tags ? `<div class="seg-factors">${tags}</div>` : ""}
+          </div>`;
+      }).join("");
+    }
+
+    function paintChips() {
+      const color = ROUTE_COLORS[activeRouteKey];
+      ["chip-cpted", "chip-temporal"].forEach((id) => {
+        const el = $(id); if (!el) return;
+        el.style.setProperty("--chip", color);
+        el.lastElementChild.textContent = `${NAMES[activeRouteKey]} route`;
+      });
+    }
+
+    function paintCpted() {
+      const cur = latestRoutesData && latestRoutesData[activeRouteKey];
+      if (!cur) return;
+      const c = cut(), peak = cur.peak_segment;
+      const showPeak = !!(peak && Number(peak.risk_score) >= c.elevated);
+
+      $("peak-hazard-card").innerHTML = peak
+        ? peakCardHtml2(peak)
+        : `<div class="empty-note">No peak segment reported for this route.</div>`;
+      $("route-factors-box").innerHTML = factorChipsHtml2(cur.summary_bullets || cur.reasons || [], showPeak);
+
+      const segs = cur.high_risk_segments || cur.peak_segments || [];
+      $("seg-count").textContent = segs.length ? `${segs.length} flagged` : "";
+      $("route-segments-container").innerHTML = segs.length
+        ? segCardsHtml(segs)
+        : `<div class="empty-note">\u2713 No segments cross the elevated-risk threshold on this route.</div>`;
+    }
+
+    // Event delegation: containers are rewritten on every paint, the listeners are not.
+    $("peak-hazard-card").addEventListener("click", (e) => { if (e.target.closest("[data-act='locate-peak']")) locatePeak(activeRouteKey); });
+    const segHost = $("route-segments-container");
+    const segGo = (e) => { const el = e.target.closest(".seg-card"); if (el) locateSegment(activeRouteKey, Number(el.dataset.seg)); };
+    segHost.addEventListener("click", segGo);
+    segHost.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); segGo(e); } });
+
+    // ------------------------------------------------------------------ renderRoutes / selectRoute
+    function paintAll() { paintSelector(); paintStats(); paintCpted(); paintChips(); }
+
+    /** Replaces app.js's renderStreamlinedRoutes(): fills the deck panes, then opens the deck. */
+    function renderRoutes() {
+      if (!latestRoutesData) return;
+      S.hasRoutes = true;
+      document.body.classList.add("has-routes");
+      const place = (placeInput.value || "").split(",")[0].trim() || "Area";
+      $("deck-sub").textContent = `${place} \u00b7 ${String(hourSlider.value).padStart(2, "0")}:00 \u00b7 \u03bb ${parseFloat(lambdaSlider.value).toFixed(2)}`;
+
+      paintAll();
+      if (window.SRO) SRO.mountDiurnal();          // binds the scrubber once, then (re)draws the active route's 24-h chart
+
+      closeInspector();                            // a fresh route result takes the deck back from the inspector
+      setMode("routes");
+      const wasOpen = S.open;
+      setDeckOpen(true, { refit: !wasOpen });
+      if (!wasOpen) switchShowcaseTab("routes");
+    }
+    window.renderRoutes = renderRoutes;
+    window.renderStreamlinedRoutes = renderRoutes;   // app.js's findRoute() calls this name
+
+    /** Replaces app.js's selectRoute(): restyle the map, repaint only the deck's dynamic parts. */
+    window.selectRoute = function (key) {
+      if (!latestRoutesData || !latestRoutesData[key]) return;
+      activeRouteKey = key;
+      Object.entries(routeLayers).forEach(([k, entry]) => styleRouteEntry(entry, k === key));
+      if (window.SRO) SRO.onRouteSelected();
+      else if (routeLayers[key]) routeLayers[key].group.bringToFront();
+      paintAll();
+      if (window.SRO) SRO.mountDiurnal();          // point the 24-hour chart + scrubber at the newly active route
+    };
+
+    const sel = $("route-selector");
+    sel.addEventListener("click", (e) => { const c = e.target.closest(".route-card"); if (c) selectRoute(c.dataset.key); });
+    sel.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const c = e.target.closest(".route-card"); if (!c) return;
+      e.preventDefault(); selectRoute(c.dataset.key);
+    });
+
+    // ------------------------------------------------------------------ routes cleared (new area, Clear button...)
+    function resetPanes() {
+      ["route-selector", "peak-hazard-card", "route-factors-box", "route-segments-container"].forEach((id) => { $(id).innerHTML = ""; });
+      ["st-dist", "st-time", "st-avg", "st-peak", "st-elev", "st-delta"].forEach((id) => setHtml(id, "\u2014", ""));
+      $("seg-count").textContent = ""; $("metrics-route-name").textContent = "";
+      const sl = $("scrub-slider"), msg = $("diurnal-msg"), btn = $("apply-hour-btn");
+      if (sl) sl.disabled = true;
+      if (msg) { msg.hidden = false; msg.textContent = "Compute a route to see its 24-hour profile."; }
+      if (btn) { btn.disabled = true; btn.textContent = "Re-optimise path for this hour"; }
+      $("diurnal-live").innerHTML = "";
+    }
+
+    if (window.SRO) {
+      const prev = SRO.onRoutesCleared;
+      SRO.onRoutesCleared = function () {
+        prev.apply(this, arguments);
+        // findRoute() clears and re-adds layers in the same tick, so only react if nothing came back.
+        setTimeout(() => {
+          if (Object.keys(routeLayers).length) return;
+          latestRoutesData = null; S.hasRoutes = false;
+          document.body.classList.remove("has-routes");
+          resetPanes();
+          if (S.mode === "routes") setDeckOpen(false);
+        }, 0);
+      };
+    }
+
+    // ------------------------------------------------------------------ Inspect Area Mode toggle
+    const tog = $("inspect-toggle");
+    function setInspectMode(on) {
+      if (on && !areaLoaded) { toast("Load an area first, then switch Inspect Area Mode on."); return; }
+      window.SRO_INSPECT_MODE = on;                       // read by enhancements.js before it inspects a map click
+      tog.setAttribute("aria-pressed", String(on));
+      tog.querySelector(".it-state").textContent = on ? "ON" : "OFF";
+      $("map").classList.toggle("inspect-mode", on);
+      if (on) toast("Inspect mode on \u2014 click anywhere inside the dashed boundary.", 4200);
+      else closeInspector();
+    }
+    window.SRO_INSPECT_MODE = false;
+    tog.addEventListener("click", () => setInspectMode(!window.SRO_INSPECT_MODE));
+
+    // ------------------------------------------------------------------ swap / clear
+    $("swap-btn").addEventListener("click", () => {
+      if (!areaLoaded || !originLatLng || !destLatLng) { setStatus(locationStatus, "Set a destination first, then swap.", "error"); return; }
+      const a = originLatLng, b = destLatLng;
+      const aLabel = startInput.value.trim() || "Area centre", bLabel = destInput.value.trim() || "Selected point";
+      setStartLatLng(b, bLabel, { fly: false });
+      setDestLatLng(a, aLabel, { fly: false });
+      if (window.SRO && SRO.swapPills) SRO.swapPills();
+      setStatus(locationStatus, "Start and destination swapped.", "ok");
+      if (S.hasRoutes && !findRouteBtn.disabled) findRoute();      // keep the showcase in sync with the new direction
+    });
+
+    $("clear-btn").addEventListener("click", () => {
+      if (!areaLoaded) return;
+      if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
+      destLatLng = null; destInput.value = "";
+      originLatLng = areaCenterLatLng; startInput.value = "";
+      if (originMarker && areaCenterLatLng) originMarker.setLatLng(areaCenterLatLng).setPopupContent("Start (area centre by default)");
+      clearRouteLayers();
+      if (window.SRO && SRO.resetPills) SRO.resetPills();
+      setStatus(locationStatus, "Cleared \u2014 pick a new destination.", "ok");
+      setStatus(routeStatus, "");
+      updateFindButtonState();
+    });
+
+    // initial state
+    setMode("routes");
+    switchShowcaseTab("routes");
+  })();
+  </script>
+  {% endraw %}
 </body>
 </html>
