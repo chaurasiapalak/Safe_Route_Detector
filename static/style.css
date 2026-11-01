@@ -401,74 +401,79 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 2px;
 }
 
-/* Factor Badges / Environmental Chips */
+/* Factor Badges / Environmental Chips -------------------------------------------------
+   One quiet, borderless list: a hairline between rows instead of a box around every row.
+   Only the small icon badge carries colour. */
 .factor-list {
   display: flex;
   flex-direction: column;
-  margin: 8px 0;
+  margin: 10px 0 4px;
+  padding: 2px 12px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
 }
-
-/* Glass chip: same neutral surface for every factor; ONLY the small icon badge carries colour,
-   so a list of chips no longer reads as a wall of red alerts. */
 .factor-chip {
   display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
   font-size: 11.5px;
-  line-height: 1.4;
+  line-height: 1.45;
   color: #d4d4d8;
-  margin-bottom: 6px;
 }
+.factor-chip + .factor-chip { border-top: 1px solid rgba(255, 255, 255, 0.06); }
 .chip-ico {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
   font-size: 12px;
   line-height: 1;
 }
-.chip-ico.amber { background: rgba(245, 158, 11, 0.16); border: 1px solid rgba(245, 158, 11, 0.32); }
-.chip-ico.blue  { background: rgba(59, 130, 246, 0.16); border: 1px solid rgba(59, 130, 246, 0.34); }
-.chip-ico.rose  { background: rgba(244, 63, 94, 0.14);  border: 1px solid rgba(244, 63, 94, 0.30); }
-.chip-text { flex: 1; min-width: 0; padding-top: 2px; }
+.chip-ico.amber { background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.28); }
+.chip-ico.blue  { background: rgba(59, 130, 246, 0.14); border: 1px solid rgba(59, 130, 246, 0.30); }
+.chip-ico.rose  { background: rgba(244, 63, 94, 0.12);  border: 1px solid rgba(244, 63, 94, 0.26); }
+.chip-text { flex: 1; min-width: 0; }
 
 /* Collapsible Segments Accordion */
 .accordion-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 7px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   cursor: pointer;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--text-body);
-  margin-top: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d4d4d8;
+  margin-top: 14px;
   user-select: none;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-
-.accordion-header:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
+.accordion-header:hover { background: rgba(6, 182, 212, 0.07); border-color: rgba(6, 182, 212, 0.3); }
 .accordion-header .chevron {
-  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(6, 182, 212, 0.12);
+  font-size: 8px;
   color: var(--cyan);
 }
 
 .accordion-body,
 #seg-accordion-body {
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -716,78 +721,117 @@ input[type="range"].scrub-slider::-moz-range-thumb { width: 12px; height: 12px; 
    Peak Hazard "Cyber-HUD" caution card, structured segment cards
    ========================================================================= */
 .peak-card {
-  margin: 10px 0 12px;
-  padding: 12px 14px;
-  background: linear-gradient(180deg, rgba(244, 63, 94, 0.12) 0%, rgba(24, 24, 27, 0.94) 100%);
-  border: 1px solid rgba(244, 63, 94, 0.35);
-  border-left: 4px solid #f43f5e;
-  border-radius: 10px;
-  box-shadow: 0 0 22px rgba(244, 63, 94, 0.12);
+  margin: 12px 0 10px;
+  padding: 14px 14px 12px;
+  background: linear-gradient(180deg, rgba(244, 63, 94, 0.09) 0%, rgba(24, 24, 27, 0.9) 70%);
+  border: 1px solid rgba(244, 63, 94, 0.22);
+  border-radius: 12px;
+  box-shadow: inset 3px 0 0 #f43f5e, 0 6px 18px rgba(0, 0, 0, 0.35);
 }
-.peak-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
-.peak-title { display: inline-flex; align-items: center; gap: 7px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #fda4af; }
-.peak-title::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #f43f5e; box-shadow: 0 0 8px #f43f5e; animation: pulse 1.6s ease-in-out infinite; }
-.peak-score { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: #fb7185; text-shadow: 0 0 10px rgba(244, 63, 94, 0.55); }
-.peak-score small { font-size: 10px; color: #fda4af; opacity: 0.8; }
+.peak-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.peak-title { display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em; color: #fda4af; }
+.peak-title::before { content: ""; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: #f43f5e; box-shadow: 0 0 6px #f43f5e; animation: pulse 1.6s ease-in-out infinite; }
+.peak-score {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 700; line-height: 1;
+  color: #fb7185; padding: 4px 9px; border-radius: 8px;
+  background: rgba(244, 63, 94, 0.12); border: 1px solid rgba(244, 63, 94, 0.28);
+}
+.peak-score small { font-size: 10px; font-weight: 600; color: #fda4af; opacity: 0.75; margin-left: 1px; }
 
 .peak-pills, .peak-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .peak-pills { margin-bottom: 8px; }
+.peak-tags { padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.07); }
 .glow-pill {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: 999px;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
-  color: #e4e4e7; background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 10px rgba(244, 63, 94, 0.28);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  color: #e4e4e7; background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
-.glow-pill.len { color: #fda4af; border-color: rgba(244, 63, 94, 0.45); }
+.glow-pill.len { color: #fda4af; border-color: rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.08); }
 .glow-pill.street { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-ui); font-weight: 600; }
 
 .risk-tag {
-  background: rgba(244, 63, 94, 0.15);
-  border: 1px solid rgba(244, 63, 94, 0.25);
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: 11px;
+  background: rgba(244, 63, 94, 0.10);
+  border: 1px solid rgba(244, 63, 94, 0.20);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10.5px;
   color: #fca5a5;
 }
 
 button.locate-btn {
-  width: auto;
-  background: rgba(6, 182, 212, 0.12);
-  border: 1px solid rgba(6, 182, 212, 0.35);
+  width: 100%;
+  justify-content: center;
+  background: rgba(6, 182, 212, 0.10);
+  border: 1px solid rgba(6, 182, 212, 0.30);
   color: #22d3ee;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 7px;
+  margin-top: 12px;
 }
-button.locate-btn:hover:not(:disabled) { background: rgba(6, 182, 212, 0.22); border-color: #22d3ee; box-shadow: 0 0 14px rgba(6, 182, 212, 0.3); }
+.peak-tags + button.locate-btn { margin-top: 10px; }
+button.locate-btn:hover:not(:disabled) { background: rgba(6, 182, 212, 0.20); border-color: #22d3ee; box-shadow: 0 0 12px rgba(6, 182, 212, 0.25); }
 button.locate-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
 
-/* Structured highlighted-segment cards (one card per segment, stacked in #seg-accordion-body) */
+/* Structured highlighted-segment cards (one card per segment, stacked in #seg-accordion-body).
+   Factors are a tidy 2-column ledger (points | reason) instead of ragged wrapping tags. */
 .seg-card {
-  padding: 10px 11px;
+  padding: 11px 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
+  border-left: 3px solid rgba(245, 158, 11, 0.7);
+  border-radius: 10px;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.seg-card:hover { border-color: rgba(6, 182, 212, 0.4); background: rgba(6, 182, 212, 0.05); }
-.seg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.seg-score { font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 6px; }
-.seg-score.elevated { color: #fbbf24; background: rgba(245, 158, 11, 0.14); border: 1px solid rgba(245, 158, 11, 0.3); }
-.seg-score.high { color: #fb7185; background: rgba(244, 63, 94, 0.14); border: 1px solid rgba(244, 63, 94, 0.32); }
-.seg-len { font-family: var(--font-mono); font-size: 10.5px; color: #a1a1aa; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.12); }
-.seg-context { font-size: 11.5px; color: #d4d4d8; margin-bottom: 7px; }
-.seg-context b { color: #a1a1aa; font-weight: 600; }
-.seg-factors { display: flex; flex-wrap: wrap; gap: 5px; }
-.seg-tag { display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border-radius: 6px; font-size: 10.5px; line-height: 1.35; color: #d4d4d8; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.09); }
-.seg-tag .pts { flex: 0 0 auto; white-space: nowrap; font-family: var(--font-mono); font-weight: 700; font-style: normal; color: #fb7185; }
+.seg-card:has(.seg-score.high) { border-left-color: rgba(244, 63, 94, 0.85); }
+.seg-card:hover { border-color: rgba(6, 182, 212, 0.4); border-left-color: #22d3ee; background: rgba(6, 182, 212, 0.05); }
+.seg-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.seg-score { font-family: var(--font-mono); font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 999px; }
+.seg-score.elevated { color: #fbbf24; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.28); }
+.seg-score.high { color: #fb7185; background: rgba(244, 63, 94, 0.12); border: 1px solid rgba(244, 63, 94, 0.30); }
+.seg-len { font-family: var(--font-mono); font-size: 10.5px; color: #a1a1aa; }
+.seg-context { font-size: 11px; color: #a1a1aa; margin-bottom: 8px; }
+.seg-context b { color: #71717a; font-weight: 600; margin-right: 2px; }
+.seg-factors { display: flex; flex-direction: column; border-top: 1px solid rgba(255, 255, 255, 0.07); padding-top: 4px; }
+.seg-tag {
+  display: grid; grid-template-columns: 50px 1fr; align-items: baseline; column-gap: 8px;
+  padding: 5px 0; font-size: 11px; line-height: 1.4; color: #d4d4d8;
+  background: none; border: 0; border-radius: 0;
+}
+.seg-tag + .seg-tag { border-top: 1px dashed rgba(255, 255, 255, 0.06); }
+.seg-tag:not(:has(.pts)) { grid-template-columns: 1fr; }
+.seg-tag .pts { white-space: nowrap; text-align: right; font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; font-style: normal; color: #fb7185; }
 .seg-tag.pos .pts { color: #2dd4bf; }
+
+
+/* --- Pick start / destination on the map -------------------------------------------- */
+.input-row button.pick-btn { padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; }
+.input-row button.pick-btn svg { width: 16px; height: 16px; }
+.input-row button.pick-btn.active, .input-row button.pick-btn.active:hover:not(:disabled) {
+  background: var(--cyan); color: #06222a; border-color: var(--cyan); box-shadow: 0 0 14px rgba(6, 182, 212, 0.45);
+}
+#map.pick-mode, #map.pick-mode .leaflet-interactive, #map.pick-mode .leaflet-grab { cursor: crosshair !important; }
+
+.insp-actions { display: flex; gap: 8px; margin: 0 0 4px; }
+.insp-actions button { flex: 1; }
+
+.pt-popup .leaflet-popup-content-wrapper { background: rgba(15, 23, 42, 0.92); color: #e2e8f0; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 12px 32px rgba(2, 6, 23, 0.45); padding: 0; }
+.pt-popup .leaflet-popup-content { margin: 0; min-width: 190px; }
+.pt-popup .leaflet-popup-tip { background: rgba(15, 23, 42, 0.92); }
+.pt-menu { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.pt-menu-title { padding: 4px 10px 6px; font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8; }
+.pt-menu button { width: 100%; margin: 0; display: flex; align-items: center; gap: 9px; padding: 8px 10px; background: transparent; color: #e2e8f0; border-radius: 8px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; text-align: left; }
+.pt-menu button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); box-shadow: none; }
+.pt-menu .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.pt-menu .dot.start { background: #06b6d4; box-shadow: 0 0 8px #06b6d4; }
+.pt-menu .dot.dest { background: #f43f5e; box-shadow: 0 0 8px #f43f5e; }
+.pt-menu .dot.inspect { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }

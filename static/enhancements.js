@@ -208,6 +208,76 @@
   }
 
   // ======================================================================================
+  // 2b) Set start / destination straight from the map
+  //     - the target buttons beside each input ("pick" mode: next map click sets that point)
+  //     - right-click (or long-press) menu: Start here / Destination here / Inspect
+  //     - Set-as buttons inside the inspector drawer
+  // ======================================================================================
+  const PICK = { mode: null };
+
+  function setPickMode(mode) {
+    PICK.mode = mode;
+    map.getContainer().classList.toggle("pick-mode", !!mode);
+    [["start", "pick-start-btn"], ["dest", "pick-dest-btn"]].forEach(([k, id]) => {
+      const b = $(id);
+      if (b) b.classList.toggle("active", mode === k);
+    });
+    if (mode) toast(`Click the map to set the ${mode === "start" ? "start" : "destination"} \u00b7 Esc to cancel`, 6000);
+  }
+
+  /** Put the start/destination at a map position (must be inside the loaded boundary). */
+  function placePoint(kind, latlng, label) {
+    if (!hullRing || !pointInRing(latlng.lat, latlng.lng, hullRing)) {
+      toast("That spot is outside the dashed boundary \u2014 pick a point inside it.");
+      return false;
+    }
+    const name = label || `Map point (${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)})`;
+    const ll = [latlng.lat, latlng.lng];
+    const ok = kind === "start" ? setStartLatLng(ll, name, { fly: false }) : setDestLatLng(ll, name, { fly: false });
+    if (ok) { chosen[kind] = null; renderPills(); }
+    return ok;
+  }
+
+  function openPointMenu(latlng) {
+    if (typeof areaLoaded === "undefined" || !areaLoaded || !hullRing) return;
+    if (!pointInRing(latlng.lat, latlng.lng, hullRing)) { toast("Right-click inside the dashed boundary."); return; }
+    const box = document.createElement("div");
+    box.className = "pt-menu";
+    box.innerHTML =
+      `<div class="pt-menu-title">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>` +
+      `<button type="button" data-a="start"><i class="dot start"></i>Set as start</button>` +
+      `<button type="button" data-a="dest"><i class="dot dest"></i>Set as destination</button>` +
+      `<button type="button" data-a="inspect"><i class="dot inspect"></i>Inspect safety here</button>`;
+    box.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button");
+      if (!b) return;
+      map.closePopup();
+      if (b.dataset.a === "inspect") inspectAt(latlng);
+      else placePoint(b.dataset.a, latlng);
+    });
+    L.popup({ closeButton: false, className: "pt-popup", offset: [0, -2], autoPan: false })
+      .setLatLng(latlng).setContent(box).openOn(map);
+  }
+
+  function bindPickControls() {
+    [["start", "pick-start-btn"], ["dest", "pick-dest-btn"]].forEach(([kind, id]) => {
+      const b = $(id);
+      if (b) b.addEventListener("click", () => setPickMode(PICK.mode === kind ? null : kind));
+    });
+    map.on("contextmenu", (e) => { setPickMode(null); openPointMenu(e.latlng); });
+    // drawer shortcuts act on the point that was clicked for inspection
+    [["start", "insp-set-start"], ["dest", "insp-set-dest"]].forEach(([kind, id]) => {
+      const b = $(id);
+      if (!b) return;
+      b.addEventListener("click", () => {
+        if (!INSP.last) return;
+        const street = $("insp-street").textContent.trim();
+        placePoint(kind, INSP.last, street && street !== "\u2014" ? `${street} (map point)` : null);
+      });
+    });
+  }
+
+  // ======================================================================================
   // 3) Area Safety Inspector (slide-out drawer)
   // ======================================================================================
   const INSP = { token: 0, last: null, radar: null, layer: null, timer: null };
@@ -391,6 +461,11 @@
   function bindInspector() {
     map.on("click", (e) => {
       if (typeof areaLoaded === "undefined" || !areaLoaded || !hullRing) return;
+      if (PICK.mode) {                                   // "pick on map" mode: this click sets start/destination
+        const kind = PICK.mode;
+        if (placePoint(kind, e.latlng)) setPickMode(null);
+        return;
+      }
       if (!pointInRing(e.latlng.lat, e.latlng.lng, hullRing)) {
         toast("Click inside the dashed boundary to inspect an area.");
         return;
@@ -398,7 +473,11 @@
       inspectAt(e.latlng);
     });
     $("insp-close").addEventListener("click", closeDrawer);
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerEl().classList.contains("open")) closeDrawer(); });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (PICK.mode) setPickMode(null);
+      else if (drawerEl().classList.contains("open")) closeDrawer();
+    });
   }
 
   // Re-inspect (quietly) when the scrubbed hour changes while the drawer is open.
@@ -682,6 +761,8 @@
   // ======================================================================================
   SRO.onAreaLoaded = function () {
     closeDrawer();
+    setPickMode(null);
+    ["pick-start-btn", "pick-dest-btn"].forEach((id) => { const b = $(id); if (b) b.disabled = false; });
     chosen.start = chosen.dest = null;
     landmarks = []; hullRing = null;
     const box = $("landmark-pills");
@@ -694,7 +775,8 @@
     initMiniMap();
     bindPillToolbar();
     bindInspector();
+    bindPickControls();
   });
   // Scripts sit at the end of <body>, so DOMContentLoaded may already have fired.
-  if (document.readyState !== "loading") { initMiniMap(); bindPillToolbar(); bindInspector(); }
+  if (document.readyState !== "loading") { initMiniMap(); bindPillToolbar(); bindInspector(); bindPickControls(); }
 })();

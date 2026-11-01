@@ -296,17 +296,17 @@ function flyToPoint(latlng) {
   map.flyTo(latlng, Math.max(map.getZoom(), 16), { duration: 0.6 });
 }
 
-function setStartLatLng(latlng, label) {
+function setStartLatLng(latlng, label, opts) {
   if (!areaLoaded || !originMarker) return false;
   originLatLng = latlng;
   startInput.value = label || "";
   originMarker.setLatLng(latlng).setPopupContent(`Start: ${label || "selected point"}`).openPopup();
-  flyToPoint(latlng);
+  if (!opts || opts.fly !== false) flyToPoint(latlng);       // picking on the map keeps the current view
   setStatus(locationStatus, `Start set to "${label || "selected point"}".`, "ok");
   return true;
 }
 
-function setDestLatLng(latlng, label) {
+function setDestLatLng(latlng, label, opts) {
   if (!areaLoaded) return false;
   destLatLng = latlng;
   destInput.value = label || "";
@@ -318,7 +318,7 @@ function setDestLatLng(latlng, label) {
       .bindPopup(`Destination: ${label || "selected point"}`)
       .openPopup();
   }
-  flyToPoint(latlng);
+  if (!opts || opts.fly !== false) flyToPoint(latlng);
   setStatus(locationStatus, `Destination set to "${label || "selected point"}".`, "ok");
   updateFindButtonState();
   return true;

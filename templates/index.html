@@ -36,12 +36,18 @@
         <div class="input-row">
           <input id="start-input" type="text" placeholder="Leave blank to use the area centre" disabled title="Load an area first">
           <button id="set-start-btn" class="secondary" disabled title="Load an area first">Set</button>
+          <button type="button" id="pick-start-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick start on the map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          </button>
         </div>
 
         <label for="dest-input">Destination</label>
         <div class="input-row">
           <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
           <button id="set-dest-btn" class="secondary" disabled title="Load an area first">Set</button>
+          <button type="button" id="pick-dest-btn" class="secondary pick-btn" disabled title="Pick on the map" aria-label="Pick destination on the map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+          </button>
         </div>
 
         <!-- Quick-select landmark pills (filled by enhancements.js from GET /api/landmarks) -->
@@ -125,6 +131,11 @@
                 <div id="grade-band" class="grade-band">&nbsp;</div>
                 <div id="grade-hour" class="dim"></div>
               </div>
+            </div>
+
+            <div class="insp-actions">
+              <button type="button" class="ghost sm" id="insp-set-start">Set as start</button>
+              <button type="button" class="ghost sm" id="insp-set-dest">Set as destination</button>
             </div>
 
             <div class="insp-section-title">CPTED profile <span class="dim">outer ring = safer</span></div>
