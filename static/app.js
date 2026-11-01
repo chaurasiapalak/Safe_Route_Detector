@@ -380,6 +380,7 @@ async function findRoute() {
     if (boundsPoints.length) map.fitBounds(L.latLngBounds(boundsPoints), { padding: [30, 30] });
 
     if (resultsPanel) resultsPanel.style.display = "block";
+    if (window.SRO_TABS) window.SRO_TABS.show("insights", { keepScroll: false });   // success: jump to Route Insights first, so the 24h chart is built in a visible pane
     if (window.SRO) window.SRO.onRoutesRendered(data);   // starts the 24-hour profile fetch
     renderStreamlinedRoutes();
 

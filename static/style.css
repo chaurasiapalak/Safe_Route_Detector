@@ -835,3 +835,78 @@ button.locate-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .pt-menu .dot.start { background: #06b6d4; box-shadow: 0 0 8px #06b6d4; }
 .pt-menu .dot.dest { background: #f43f5e; box-shadow: 0 0 8px #f43f5e; }
 .pt-menu .dot.inspect { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
+
+
+/* =========================================================================
+   Sidebar view switcher: "Trip Planner" | "Route Insights"
+   Presentational only. Panels keep their IDs; panes just show/hide them.
+   ========================================================================= */
+.sidebar-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 0 12px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+#sidebar .sidebar-tabs button.tab-nav-btn {
+  width: 100%;
+  margin: 0;
+  padding: 8px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+#sidebar .sidebar-tabs button.tab-nav-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
+#sidebar .sidebar-tabs button.tab-nav-btn:hover:not(:disabled) {
+  background: rgba(6, 182, 212, 0.08);
+  color: var(--text-body);
+  box-shadow: none;
+}
+#sidebar .sidebar-tabs button.tab-nav-btn.active,
+#sidebar .sidebar-tabs button.tab-nav-btn.active:hover:not(:disabled) {
+  background: rgba(6, 182, 212, 0.14);
+  color: #22d3ee;
+  border-color: rgba(6, 182, 212, 0.45);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.28), inset 0 0 8px rgba(6, 182, 212, 0.10);
+}
+#sidebar .sidebar-tabs button.tab-nav-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+/* Panes: only the active one is laid out. */
+.sidebar-view-pane { animation: paneIn 0.18s ease both; }
+.sidebar-view-pane.hidden { display: none; }
+@keyframes paneIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar-view-pane { animation: none; } }
+
+/* Empty state for Route Insights: visible only while #results-panel still carries its inline display:none */
+.insights-empty { display: none; }
+#results-panel[style*="none"] + .insights-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 28px 18px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+  background: var(--bg-panel);
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+}
+.insights-empty svg { width: 28px; height: 28px; color: var(--cyan); opacity: 0.7; margin-bottom: 2px; }
+.insights-empty strong { color: var(--text-body); font-size: 12.5px; }
+.insights-empty em { color: #22d3ee; font-style: normal; font-weight: 600; }

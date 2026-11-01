@@ -16,6 +16,21 @@
       <h1>&#128737;&#65039; Safe Route Optimizer</h1>
       <button id="diag-btn" class="secondary" type="button">Model diagnostics</button>
 
+      <!-- Sidebar view switcher (behaviour: script at the bottom of this file) -->
+      <nav class="sidebar-tabs" role="tablist" aria-label="Sidebar view">
+        <button type="button" id="tab-nav-planner" class="tab-nav-btn active" role="tab" aria-selected="true" aria-controls="pane-planner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4z"/><path d="M9 4v13M15 7v12.5"/></svg>
+          Trip Planner
+        </button>
+        <button type="button" id="tab-nav-insights" class="tab-nav-btn" role="tab" aria-selected="false" aria-controls="pane-insights" tabindex="-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+          Route Insights
+        </button>
+      </nav>
+
+      <!-- ===== Tab 1: Trip Planner (panels 1-3) ===== -->
+      <div id="pane-planner" class="sidebar-view-pane" role="tabpanel" aria-labelledby="tab-nav-planner">
+
       <section class="panel">
         <h2>1. Area</h2>
         <label for="place-input">Place name</label>
@@ -81,6 +96,11 @@
         <p id="route-status" class="status"></p>
       </section>
 
+      </div><!-- /#pane-planner -->
+
+      <!-- ===== Tab 2: Route Insights (panels 4-5: route cards, stats, peak hazard, reasons, segments, 24h chart) ===== -->
+      <div id="pane-insights" class="sidebar-view-pane hidden" role="tabpanel" aria-labelledby="tab-nav-insights">
+
       <section class="panel" id="results-panel" style="display:none;">
         <h2>4. Routes</h2>
         <div class="route-row" id="row-shortest">
@@ -99,6 +119,15 @@
           <span class="metrics"></span>
         </div>
       </section>
+
+      <!-- Shown by CSS only while #results-panel is still display:none (no routes computed yet) -->
+      <div class="insights-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+        <strong>No routes yet</strong>
+        <span>Pick a destination in <em>Trip Planner</em> and press <em>Find Route</em> &mdash; results land here automatically.</span>
+      </div>
+
+      </div><!-- /#pane-insights -->
     </aside>
 
     <div id="map-wrap">
@@ -155,6 +184,63 @@
   <script src="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.js"></script>
   <!-- Chart.js: inspector radar chart + 24-hour sparkline -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Sidebar tab switcher: purely presentational, never touches element IDs or other scripts' state -->
+  <script>
+  (function () {
+    "use strict";
+    var VIEWS = {
+      planner:  { btn: "tab-nav-planner",  pane: "pane-planner"  },
+      insights: { btn: "tab-nav-insights", pane: "pane-insights" }
+    };
+    var ORDER = ["planner", "insights"];
+    var current = "planner";
+
+    function byId(id) { return document.getElementById(id); }
+
+    // Chart.js sizes itself from its container; a canvas built or left while display:none can be stale/0px.
+    function resizeCharts() {
+      if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") return;
+      requestAnimationFrame(function () {
+        var c = Chart.getChart("diurnal-chart");
+        if (c) { c.resize(); c.update("none"); }
+      });
+    }
+
+    function show(name, opts) {
+      if (!VIEWS[name]) return;
+      current = name;
+      ORDER.forEach(function (k) {
+        var on = k === name;
+        var btn = byId(VIEWS[k].btn), pane = byId(VIEWS[k].pane);
+        if (pane) pane.classList.toggle("hidden", !on);
+        if (btn) {
+          btn.classList.toggle("active", on);
+          btn.setAttribute("aria-selected", on ? "true" : "false");
+          btn.tabIndex = on ? 0 : -1;
+        }
+      });
+      var sb = byId("sidebar");
+      if (sb && !(opts && opts.keepScroll)) sb.scrollTop = 0;
+      if (name === "insights") resizeCharts();
+    }
+
+    ORDER.forEach(function (k, i) {
+      var btn = byId(VIEWS[k].btn);
+      if (!btn) return;
+      btn.addEventListener("click", function () { show(k); });
+      btn.addEventListener("keydown", function (e) {            // roving arrow-key navigation
+        var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        var next = ORDER[(i + d + ORDER.length) % ORDER.length];
+        show(next);
+        var nb = byId(VIEWS[next].btn); if (nb) nb.focus();
+      });
+    });
+
+    window.SRO_TABS = { show: show, current: function () { return current; } };
+  })();
+  </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   <script src="{{ url_for('static', filename='enhancements.js') }}"></script>
   <script src="{{ url_for('static', filename='diagnostics.js') }}"></script>
