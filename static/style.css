@@ -46,9 +46,9 @@ html, body {
 
 /* --- Sidebar: HUD grid styling --- */
 #sidebar {
-  width: 380px;
+  width: 320px;
   flex-shrink: 0;
-  padding: 16px;
+  padding: 14px;
   overflow-y: auto;
   background-color: var(--bg-deep);
   background-image:
@@ -837,76 +837,135 @@ button.locate-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
 .pt-menu .dot.inspect { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
 
 
+
 /* =========================================================================
-   Sidebar view switcher: "Trip Planner" | "Route Insights"
-   Presentational only. Panels keep their IDs; panes just show/hide them.
+   Two-tier split dock
+   LEFT  #sidebar        320px control rail: panels 1-3 + the 3 route cards (panel 4)
+   RIGHT #insight-dock   420px deep inspector deck: peak hazard, factor chips, 24h chart, segments,
+                         plus the Area Safety Inspector (#inspector, hosted in the "Area inspector" tab)
+   The dock overlays the map (like the old inspector drawer), so Leaflet keeps its size; the bottom-right
+   controls (MiniMap, attribution) slide left by the dock width via `right`.
    ========================================================================= */
-.sidebar-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  margin: 0 0 12px;
-  background: var(--bg-deep);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 6px 16px rgba(0, 0, 0, 0.35);
-}
-#sidebar .sidebar-tabs button.tab-nav-btn {
-  width: 100%;
-  margin: 0;
-  padding: 8px 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid transparent;
-  border-radius: 7px;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-}
-#sidebar .sidebar-tabs button.tab-nav-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
-#sidebar .sidebar-tabs button.tab-nav-btn:hover:not(:disabled) {
-  background: rgba(6, 182, 212, 0.08);
+#map-wrap { --dock-w: 420px; }
+
+/* ---- Left rail: compact so everything fits 320px --------------------------------------- */
+#sidebar .panel { padding: 12px 14px; margin-bottom: 10px; }
+#sidebar .input-row input[type="text"] { min-width: 0; }
+#sidebar #results-panel { padding: 12px; }
+#sidebar .route-selector { margin-bottom: 0; gap: 5px; }
+#sidebar .route-tab-btn { padding: 8px 3px 7px; }
+#sidebar .route-tab-title { font-size: 10px; letter-spacing: 0.03em; }
+#sidebar .route-tab-metric { font-size: 12.5px; }
+#sidebar .route-tab-sub { font-size: 9px; line-height: 1.35; white-space: normal; text-wrap: balance; }
+
+/* ---- Right dock ------------------------------------------------------------------------ */
+#insight-dock {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: var(--dock-w); max-width: 100%;
+  z-index: 1100;
+  display: flex; flex-direction: column;
   color: var(--text-body);
-  box-shadow: none;
+  background-color: var(--bg-deep);
+  background-image:
+    linear-gradient(rgba(6, 182, 212, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  border-left: 1px solid var(--border);
+  box-shadow: -14px 0 40px rgba(0, 0, 0, 0.5), -1px 0 0 rgba(6, 182, 212, 0.16);
+  transform: translateX(100%);
+  visibility: hidden;                                   /* closed dock is not tabbable; layout is kept so charts stay measured */
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.25s;
 }
-#sidebar .sidebar-tabs button.tab-nav-btn.active,
-#sidebar .sidebar-tabs button.tab-nav-btn.active:hover:not(:disabled) {
-  background: rgba(6, 182, 212, 0.14);
-  color: #22d3ee;
-  border-color: rgba(6, 182, 212, 0.45);
-  box-shadow: 0 0 14px rgba(6, 182, 212, 0.28), inset 0 0 8px rgba(6, 182, 212, 0.10);
-}
-#sidebar .sidebar-tabs button.tab-nav-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+#map-wrap.dock-open #insight-dock { transform: none; visibility: visible; transition-delay: 0s, 0s; }
 
-/* Panes: only the active one is laid out. */
-.sidebar-view-pane { animation: paneIn 0.18s ease both; }
-.sidebar-view-pane.hidden { display: none; }
-@keyframes paneIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .sidebar-view-pane { animation: none; } }
+.dock-head { flex: 0 0 auto; padding: 14px 16px 12px; border-bottom: 1px solid var(--border); background: rgba(9, 9, 11, 0.7); }
+.dock-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.dock-eyebrow { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: var(--cyan); text-shadow: 0 0 12px var(--cyan-glow); }
 
-/* Empty state for Route Insights: visible only while #results-panel still carries its inline display:none */
-.insights-empty { display: none; }
-#results-panel[style*="none"] + .insights-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  text-align: center;
-  padding: 28px 18px;
-  color: var(--text-dim);
-  font-size: 11.5px;
-  line-height: 1.5;
-  background: var(--bg-panel);
-  border: 1px dashed var(--border-strong);
-  border-radius: 10px;
+.dock-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--bg-deep); border: 1px solid var(--border); border-radius: 10px; }
+#insight-dock .dock-tab {
+  width: 100%; margin: 0; padding: 7px 8px;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid transparent; border-radius: 7px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
 }
-.insights-empty svg { width: 28px; height: 28px; color: var(--cyan); opacity: 0.7; margin-bottom: 2px; }
-.insights-empty strong { color: var(--text-body); font-size: 12.5px; }
-.insights-empty em { color: #22d3ee; font-style: normal; font-weight: 600; }
+#insight-dock .dock-tab:hover:not(:disabled) { background: rgba(6, 182, 212, 0.08); color: var(--text-body); box-shadow: none; }
+#insight-dock .dock-tab.active,
+#insight-dock .dock-tab.active:hover:not(:disabled) {
+  background: rgba(6, 182, 212, 0.14); color: #22d3ee; border-color: rgba(6, 182, 212, 0.45);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.28), inset 0 0 8px rgba(6, 182, 212, 0.1);
+}
+#insight-dock .dock-tab:focus-visible, #dock-toggle:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+
+.dock-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 14px 16px 28px; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+.dock-scroll::-webkit-scrollbar { width: 6px; }
+.dock-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+.dock-view.hidden { display: none; }
+
+/* empty states: pure CSS, driven by whether the view has content */
+.dock-empty { display: none; }
+#dock-route-body:empty + .dock-empty,
+#inspector:not(.open) + .dock-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
+  padding: 34px 20px; color: var(--text-dim); font-size: 11.5px; line-height: 1.5;
+  background: var(--bg-panel); border: 1px dashed var(--border-strong); border-radius: 10px;
+}
+.dock-empty svg { width: 28px; height: 28px; color: var(--cyan); opacity: 0.7; margin-bottom: 2px; }
+.dock-empty strong { color: var(--text-body); font-size: 12.5px; }
+.dock-empty em { color: #22d3ee; font-style: normal; font-weight: 600; }
+
+/* route analysis content sits on the dock surface, so use full width */
+#dock-route-body .route-stats-grid { margin-top: 0; }
+#dock-route-body .peak-card { margin-top: 0; }
+#dock-route-body .factor-list { margin-bottom: 12px; }
+#dock-route-body .diurnal { margin: 0 0 4px; }
+
+/* Area Safety Inspector, hosted inside the dock (element, IDs and enhancements.js logic unchanged) */
+#insight-dock #inspector {
+  position: static; inset: auto; width: auto; max-width: none; z-index: auto;
+  display: none; flex-direction: column;
+  transform: none; opacity: 1; pointer-events: auto; transition: none;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+#insight-dock #inspector.open { display: flex; }
+#insight-dock .insp-head { padding: 0 0 12px; }
+#insight-dock .insp-body { flex: none; overflow: visible; padding: 14px 0 0; }
+
+/* ---- Edge handle: manual open/close ---------------------------------------------------- */
+#dock-toggle {
+  position: absolute; top: 50%; right: 0; z-index: 1110;
+  width: 22px; height: 64px; margin: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transform: translateY(-50%);
+  background: rgba(9, 9, 11, 0.92); color: var(--cyan);
+  border: 1px solid var(--border-strong); border-right: 0; border-radius: 10px 0 0 10px;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.4);
+  transition: right 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.15s ease, color 0.15s ease;
+}
+#dock-toggle:hover:not(:disabled) { background: rgba(6, 182, 212, 0.18); color: #22d3ee; box-shadow: -4px 0 16px rgba(6, 182, 212, 0.25); }
+#dock-toggle:active:not(:disabled) { transform: translateY(-50%); }
+#dock-toggle svg { width: 14px; height: 14px; transition: transform 0.25s ease; }
+#map-wrap.dock-open #dock-toggle { right: var(--dock-w); }
+#map-wrap.dock-open #dock-toggle svg { transform: rotate(180deg); }
+
+/* ---- Bottom-right map controls (MiniMap + attribution) step aside for the open dock --------- */
+#map-wrap .leaflet-right { right: 0; transition: right 0.25s; }
+#map-wrap.dock-open .leaflet-right { right: calc(var(--dock-w) + 12px); }
+/* the old inspector drawer slid these with a transform; the dock owns that job now */
+#map-wrap.drawer-open .leaflet-bottom.leaflet-right { transform: none; }
+
+/* ---- Phones / narrow windows: dock becomes a bottom sheet -------------------------------- */
+@media (max-width: 820px) {
+  #insight-dock { position: fixed; top: auto; left: 0; right: 0; width: auto; height: 62%; border-left: 0; border-top: 1px solid var(--border-strong); box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.5); transform: translateY(100%); }
+  #map-wrap.dock-open #insight-dock { transform: none; }
+  #dock-toggle { position: fixed; top: 12px; right: 12px; width: 34px; height: 34px; border: 1px solid var(--border-strong); border-radius: 50%; transform: none; }
+  #dock-toggle:active:not(:disabled) { transform: none; }
+  #dock-toggle svg { transform: rotate(-90deg); }
+  #map-wrap.dock-open #dock-toggle { right: 12px; }
+  #map-wrap.dock-open #dock-toggle svg { transform: rotate(90deg); }
+  #map-wrap.dock-open .leaflet-right { right: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #insight-dock, #dock-toggle, #map-wrap .leaflet-right { transition: none; }
+}
