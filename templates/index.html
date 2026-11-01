@@ -2,1321 +2,150 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>Spatio-Temporal Safe Route Optimizer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SafeRoute AI — Spatio-Temporal Safe Route Optimizer</title>
-
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet MiniMap -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.css">
-  <!-- FontAwesome Icons -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <!-- Fonts -->
+  <!-- Leaflet.MiniMap (overview map, bottom-right) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
-  
-  <!-- Main HUD Stylesheet with Cache-Buster -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=116">
-
-  <style>
-    /* Critical Form & Layout Resets */
-    .row, .input-row {
-      display: flex !important;
-      flex-direction: row !important;
-      align-items: center !important;
-      gap: 8px !important;
-      width: 100% !important;
-      margin-bottom: 8px !important;
-    }
-    .row > input, .input-row > input {
-      flex: 1 1 auto !important;
-      width: auto !important;
-      min-width: 0 !important;
-      height: 38px !important;
-    }
-    .row > button, .row > .btn, .input-row button, .input-row button.secondary {
-      flex: 0 0 64px !important;
-      width: 64px !important;
-      height: 38px !important;
-      margin: 0 !important;
-      padding: 0 8px !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-    }
-    .pills {
-      display: flex !important;
-      flex-wrap: wrap !important;
-      gap: 6px !important;
-      overflow-x: visible !important;
-      padding: 4px 0 8px !important;
-      margin-top: 4px !important;
-    }
-    .pill {
-      flex: 0 1 auto !important;
-      white-space: normal !important;
-      padding: 5px 11px !important;
-      font-size: 11.5px !important;
-    }
-
-    /* 3-Column Tab Buttons */
-    .route-selector {
-      display: grid !important;
-      grid-template-columns: repeat(3, 1fr) !important;
-      grid-auto-rows: 1fr !important;
-      align-items: stretch !important;
-      gap: 6px !important;
-      width: 100% !important;
-      margin-bottom: 12px !important;
-    }
-    .route-tab-btn {
-      box-sizing: border-box !important;
-      min-width: 0 !important;
-      display: flex !important;
-      flex-direction: column !important;
-      justify-content: center !important;
-      background: #18181b !important;
-      border: 1px solid #27272a !important;
-      border-radius: 8px !important;
-      padding: 8px 6px !important;
-      cursor: pointer !important;
-      text-align: center !important;
-      transition: all 0.15s ease !important;
-      user-select: none !important;
-    }
-    .route-tab-btn:hover { background: #27272a !important; }
-    .route-tab-btn.active-shortest {
-      background: rgba(244, 63, 94, 0.15) !important;
-      border-color: #f43f5e !important;
-    }
-    .route-tab-btn.active-balanced {
-      background: rgba(234, 179, 8, 0.15) !important;
-      border-color: #eab308 !important;
-    }
-    .route-tab-btn.active-safest {
-      background: rgba(20, 184, 166, 0.15) !important;
-      border-color: #14b8a6 !important;
-    }
-    .route-tab-title {
-      font-size: 11px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase !important;
-      display: flex !important;
-      align-items: center !important;
-      justify-content: center !important;
-      gap: 4px !important;
-    }
-    .route-tab-metric {
-      font-family: var(--font-mono, monospace) !important;
-      font-size: 12px !important;
-      font-weight: 700 !important;
-      color: #e4e4e7 !important;
-      margin-top: 2px !important;
-    }
-    .route-tab-sub {
-      font-size: 9.5px !important;
-      color: #8b8b93 !important;
-    }
-
-    /* Key Metrics Grid */
-    .route-stats-grid {
-      display: grid !important;
-      grid-template-columns: repeat(3, 1fr) !important;
-      background: #111114 !important;
-      border: 1px solid #27272a !important;
-      border-radius: 8px !important;
-      padding: 8px 6px !important;
-      text-align: center !important;
-      margin-bottom: 10px !important;
-    }
-    .route-stat-item {
-      display: flex !important;
-      flex-direction: column !important;
-      align-items: center !important;
-    }
-    .route-stat-item .stat-label {
-      font-size: 9.5px !important;
-      text-transform: uppercase !important;
-      color: #8b8b93 !important;
-      font-weight: 600 !important;
-    }
-    .route-stat-item .stat-val {
-      font-family: var(--font-mono, monospace) !important;
-      font-size: 13.5px !important;
-      font-weight: 700 !important;
-      margin-top: 2px !important;
-    }
-
-    /* Peak Hazard Bottleneck Warning Banner */
-    .peak-hazard-banner {
-      background: rgba(244, 63, 94, 0.08) !important;
-      border: 1px solid rgba(244, 63, 94, 0.3) !important;
-      border-left: 4px solid #f43f5e !important;
-      border-radius: 8px !important;
-      padding: 10px 12px !important;
-      margin: 10px 0 !important;
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 5px !important;
-    }
-    .peak-hazard-header {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      font-size: 11px !important;
-      font-weight: 700 !important;
-      text-transform: uppercase !important;
-      letter-spacing: 0.05em !important;
-      color: #f43f5e !important;
-    }
-    .peak-hazard-body {
-      font-size: 11.5px !important;
-      color: #e4e4e7 !important;
-      line-height: 1.4 !important;
-    }
-    .peak-reasons-list {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 4px !important;
-      margin-top: 4px !important;
-    }
-    .peak-reason-tag {
-      display: flex !important;
-      align-items: flex-start !important;
-      gap: 6px !important;
-      font-size: 11px !important;
-      color: #fca5a5 !important;
-      background: rgba(244, 63, 94, 0.12) !important;
-      border-radius: 4px !important;
-      padding: 3px 6px !important;
-      line-height: 1.35 !important;
-    }
-    .peak-hazard-action {
-      margin-top: 4px !important;
-      font-size: 11.5px !important;
-      color: #38bdf8 !important;
-      font-weight: 600 !important;
-      cursor: pointer !important;
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 5px !important;
-      text-decoration: underline !important;
-    }
-    .peak-hazard-action:hover { color: #7dd3fc !important; }
-
-    /* Map Hazard Layer: stroke, weight, dash and opacity are set in JS (Leaflet options);
-       CSS only adds the glow. Do NOT set stroke-linecap: round here -- with an 8px line and
-       8px dashes, round caps close every gap and the dashes render as a solid line. */
-    .peak-hazard-polyline {
-      filter: drop-shadow(0 0 6px rgba(255, 42, 95, 0.7));
-    }
-    .peak-warn-marker {
-      width: 26px; height: 26px; border-radius: 50%;
-      display: grid; place-items: center;
-      background: #ff2a5f; border: 2px solid #ffffff;
-      font-size: 13px; line-height: 1;
-      box-shadow: 0 0 0 4px rgba(255, 42, 95, 0.28), 0 4px 10px rgba(0, 0, 0, 0.5);
-    }
-
-    /* Environmental Factor Chips */
-    .factor-list {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 6px !important;
-      margin: 8px 0 10px !important;
-    }
-    .factor-chip {
-      display: flex !important;
-      align-items: flex-start !important;
-      gap: 6px !important;
-      font-size: 11.5px !important;
-      line-height: 1.4 !important;
-      padding: 7px 10px !important;
-      border-radius: 8px !important;
-      background: #18181b !important;
-      border: 1px solid #27272a !important;
-    }
-    .factor-chip.danger {
-      border-left: 3.5px solid #f43f5e !important;
-      background: rgba(244, 63, 94, 0.08) !important;
-      color: #fecdd3 !important;
-    }
-    .factor-chip.safe {
-      border-left: 3.5px solid #10b981 !important;
-      background: rgba(16, 185, 129, 0.08) !important;
-      color: #a7f3d0 !important;
-    }
-    .factor-chip.neutral {
-      border-left: 3.5px solid #06b6d4 !important;
-      background: rgba(6, 182, 212, 0.08) !important;
-      color: #cffafe !important;
-    }
-
-    /* Highlighted Segments Accordion (Clean Vertical Stack) */
-    .accordion-header {
-      display: flex !important;
-      align-items: center !important;
-      justify-content: space-between !important;
-      padding: 8px 12px !important;
-      background: #18181b !important;
-      border: 1px solid #27272a !important;
-      border-radius: 8px !important;
-      cursor: pointer !important;
-      font-size: 11.5px !important;
-      font-weight: 700 !important;
-      color: #e4e4e7 !important;
-      margin-top: 10px !important;
-      user-select: none !important;
-    }
-    .accordion-header:hover { background: #27272a !important; }
-    /* Collapsed by default; JS toggles .open. (An inline display:none can never beat
-       a stylesheet display:flex !important, so visibility is class-driven.) */
-    .accordion-body {
-      display: none !important;
-      margin-top: 8px !important;
-      max-height: 280px !important;
-      overflow-y: auto !important;
-    }
-    .accordion-body.open {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 8px !important;
-    }
-    .accordion-body > * { flex: 0 0 auto !important; }
-    .segment-card {
-      display: block !important;
-      width: 100% !important;
-      box-sizing: border-box !important;
-      background: #121215 !important;
-      border: 1px solid #27272a !important;
-      border-left: 3px solid #f43f5e !important;
-      padding: 10px !important;
-      border-radius: 6px !important;
-    }
-    .segment-card-top {
-      display: flex !important;
-      justify-content: space-between !important;
-      align-items: center !important;
-      gap: 8px !important;
-      font-family: var(--font-mono, monospace) !important;
-      font-size: 11px !important;
-      font-weight: 700 !important;
-      margin-bottom: 4px !important;
-    }
-    .segment-card-desc {
-      font-size: 11px !important;
-      line-height: 1.4 !important;
-      color: #a1a1aa !important;
-      word-break: break-word !important;
-      overflow-wrap: anywhere !important;
-    }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div id="app">
-    <!-- ===================== SIDEBAR ===================== -->
     <aside id="sidebar">
-      <div class="brand" style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
-        <div class="logo" style="width:40px; height:40px; border-radius:10px; display:grid; place-items:center; color:#fff; font-size:18px; background:linear-gradient(135deg, var(--brand, #3b82f6), var(--safest, #10b981));">
-          <i class="fa-solid fa-shield-heart"></i>
-        </div>
-        <div>
-          <h1 style="margin:0; font-size:17px;">Safe Route Optimizer</h1>
-          <p style="margin:2px 0 0; font-size:11.5px; color:var(--text-dim, #8b8b93);">Pedestrian routing weighing safety &amp; street vibrancy</p>
-        </div>
-      </div>
+      <h1>&#128737;&#65039; Safe Route Optimizer</h1>
+      <button id="diag-btn" class="secondary" type="button">Model diagnostics</button>
 
-      <button id="diag-btn" class="secondary" type="button" style="margin-bottom:12px; width:100%;">
-        <i class="fa-solid fa-microchip" style="margin-right:6px;"></i> Model diagnostics
-      </button>
-
-      <!-- Panel 1: Area -->
-      <section class="panel" id="card-area">
-        <h2>1. Area <span id="area-chip" class="chip" style="display:none; font-size:10px; margin-left:6px;"></span></h2>
+      <section class="panel">
+        <h2>1. Area</h2>
         <label for="place-input">Place name</label>
         <input id="place-input" type="text" value="Hauz Khas, Delhi, India">
         <label for="dist-input">Coverage radius (m)</label>
         <input id="dist-input" type="number" value="2500" min="500" max="5000" step="100">
-        <button id="load-area-btn" class="primary" style="margin-top:10px;">Load Area</button>
+        <p class="hint">Larger radius = more ground covered (like a Google Maps
+          search area), but a slower first-time download and training pass.
+          Capped at 5000 m to keep the pedestrian network download and
+          model training practical.</p>
+        <button id="load-area-btn">Load Area</button>
         <p id="area-status" class="status"></p>
       </section>
 
-      <!-- Panel 2: Locations -->
       <section class="panel">
         <h2>2. Locations</h2>
-        <label for="start-input">Origin (blank = area centre)</label>
+        <label for="start-input">Start location</label>
         <div class="input-row">
-          <input id="start-input" type="text" placeholder="Search a place near the area" disabled>
-          <button id="set-start-btn" class="secondary" disabled>Set</button>
+          <input id="start-input" type="text" placeholder="Leave blank to use the area centre" disabled title="Load an area first">
+          <button id="set-start-btn" class="secondary" disabled title="Load an area first">Set</button>
         </div>
 
         <label for="dest-input">Destination</label>
         <div class="input-row">
-          <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled>
-          <button id="set-dest-btn" class="secondary" disabled>Set</button>
+          <input id="dest-input" type="text" placeholder="e.g. Deer Park, Hauz Khas" disabled title="Load an area first">
+          <button id="set-dest-btn" class="secondary" disabled title="Load an area first">Set</button>
         </div>
 
-        <label style="margin-top:12px;">Quick-select landmarks</label>
-        <div id="pills" class="pills">
-          <span class="pill-empty" style="color:var(--text-dim, #8b8b93); font-size:12px;">Load an area to see landmarks.</span>
-        </div>
-
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
-          <div style="border:1px dashed var(--border, #27272a); border-radius:8px; padding:6px 8px; font-size:11px;">
-            <b style="display:block; text-transform:uppercase; color:var(--text-dim, #8b8b93); font-size:9.5px;">Origin</b>
-            <span id="sel-origin" style="font-weight:600;">Area centre (default)</span>
-          </div>
-          <div style="border:1px dashed var(--border, #27272a); border-radius:8px; padding:6px 8px; font-size:11px;">
-            <b style="display:block; text-transform:uppercase; color:var(--text-dim, #8b8b93); font-size:9.5px;">Destination</b>
-            <span id="sel-dest" style="font-weight:600;">Not set</span>
+        <!-- Quick-select landmark pills (filled by enhancements.js from GET /api/landmarks) -->
+        <div class="pill-toolbar">
+          <span class="pill-label">Quick pick</span>
+          <div class="seg" id="pill-target" role="group" aria-label="Set landmark as">
+            <button type="button" data-target="dest" class="active">Destination</button>
+            <button type="button" data-target="start">Start</button>
           </div>
         </div>
-
-        <div class="input-row" style="margin-top:8px;">
-          <button id="swap-btn" class="secondary" style="flex:1 !important; width:auto !important;" title="Swap points">
-            <i class="fa-solid fa-arrow-right-arrow-left"></i> Swap
-          </button>
-          <button id="clear-btn" class="secondary" style="flex:1 !important; width:auto !important;">
-            <i class="fa-solid fa-xmark"></i> Clear
-          </button>
+        <div id="landmark-pills" class="pill-row" aria-label="Quick-select landmarks">
+          <span class="pill-hint">Load an area to see landmarks.</span>
         </div>
         <p id="location-status" class="status"></p>
       </section>
 
-      <!-- Panel 3: Route Settings -->
       <section class="panel">
         <h2>3. Route settings</h2>
-        <label for="hour-slider">Time of day: <b id="hour-value">12:00</b></label>
+        <label for="hour-slider">Time of day: <span id="hour-value">12</span>:00</label>
         <input id="hour-slider" type="range" min="0" max="23" value="12">
-        <p class="hint">The model uses typical hour-of-day patterns (lighting, footfall, open shops). It is not a live feed.</p>
+        <p class="hint">Defaults to your device's current local hour. Move it to plan for a
+          different time -- the risk model runs entirely on hour-of-day patterns
+          (typical lighting/activity by hour), not live conditions, so "future" hours
+          are just as valid a query as "now".</p>
 
-        <label for="lambda-slider" style="margin-top:12px;">Distance &harr; Safety (&lambda; = <b id="lambda-value">0.50</b>)</label>
+        <label for="lambda-slider">Distance &harr; Safety (&lambda; = <span id="lambda-value">0.50</span>)</label>
         <input id="lambda-slider" type="range" min="0" max="1" value="0.5" step="0.05">
         <div class="slider-labels"><span>Safest</span><span>Shortest</span></div>
 
-        <button id="find-route-btn" class="primary" style="margin-top:12px;" disabled>Find Route</button>
+        <button id="find-route-btn" disabled>Find Route</button>
         <p id="route-status" class="status"></p>
       </section>
 
-      <!-- Panel 4: Routes & Explanations -->
       <section class="panel" id="results-panel" style="display:none;">
         <h2>4. Routes</h2>
-        <div id="route-rows"></div>
-        <div id="warnings" class="warnings" style="display:none; margin-top:8px;"></div>
-      </section>
-
-      <!-- Panel 5: 24-Hour Diurnal Chart -->
-      <section class="panel" id="diurnal-panel" style="display:none;">
-        <h2>5. 24-hour risk profile <span id="diurnal-route-name" style="margin-left:8px; text-transform:none;"></span></h2>
-        <div class="chart-wrap" style="position:relative; height:160px;"><canvas id="diurnal-chart"></canvas></div>
-        <div id="diurnal-meta" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;"></div>
-        <div class="scrub" style="margin-top:10px;">
-          <div style="display:flex; justify-content:space-between; font-weight:700; font-size:12px;">
-            <span id="scrub-time">12:00</span>
-            <span id="scrub-readout" style="color:var(--text-dim, #8b8b93); font-weight:600;">&mdash;</span>
-          </div>
-          <input id="scrub-slider" type="range" min="0" max="23" value="12" style="margin-top:6px;">
-          <button id="apply-hour-btn" class="secondary" style="width:100% !important; margin-top:8px;">
-            <i class="fa-solid fa-rotate"></i> Re-route at this hour
-          </button>
+        <div class="route-row" id="row-shortest">
+          <span class="swatch" style="background:#f43f5e; color:#f43f5e;"></span>
+          <span class="route-name">Shortest</span>
+          <span class="metrics"></span>
         </div>
-        <p id="diurnal-status" class="status"></p>
+        <div class="route-row" id="row-balanced">
+          <span class="swatch" style="background:#eab308; color:#eab308;"></span>
+          <span class="route-name">Balanced</span>
+          <span class="metrics"></span>
+        </div>
+        <div class="route-row" id="row-safest">
+          <span class="swatch" style="background:#14b8a6; color:#14b8a6;"></span>
+          <span class="route-name">Safest</span>
+          <span class="metrics"></span>
+        </div>
       </section>
     </aside>
 
-    <!-- ===================== MAP CANVAS ===================== -->
-    <main id="map-wrap" style="position:relative; flex:1; height:100vh;">
-      <div id="map" style="position:absolute; inset:0; width:100%; height:100%;"></div>
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="map-toast" role="status" aria-live="polite"></div>
 
-      <div class="map-toolbar" style="position:absolute; top:18px; left:50%; transform:translateX(-50%); z-index:1000;">
-        <button id="inspect-toggle" class="inspect-toggle" type="button" style="background:rgba(255,255,255,0.95); border:1px solid #cbd5e1; border-radius:999px; padding:8px 16px; font-weight:700; font-size:13px; color:#1e293b; box-shadow:0 6px 20px rgba(0,0,0,0.15); display:inline-flex; align-items:center; gap:8px;">
-          <span class="ind" style="width:10px; height:10px; border-radius:50%; background:#cbd5e1;"></span>
-          &#128269; Inspect Area Mode <span class="state" style="font-size:10px; padding:2px 6px; background:#f1f5f9; border-radius:999px;">OFF</span>
-        </button>
-      </div>
+      <!-- Area Safety Inspector: slide-out glass drawer (opened by clicking inside the boundary) -->
+      <aside id="inspector" aria-hidden="true" aria-label="Area safety inspector">
+        <header class="insp-head">
+          <div>
+            <div class="insp-eyebrow">Area Safety Inspector</div>
+            <div id="insp-street" class="insp-street">&mdash;</div>
+          </div>
+          <button type="button" id="insp-close" class="icon-btn" aria-label="Close inspector">&times;</button>
+        </header>
 
-      <!-- Area Safety Inspector Drawer -->
-      <aside id="drawer" aria-live="polite" style="position:absolute; top:18px; right:18px; width:360px; max-height:calc(100vh - 36px); overflow-y:auto; z-index:1000; background:rgba(255,255,255,0.97); backdrop-filter:blur(8px); border:1px solid #e2e8f0; border-radius:18px; box-shadow:0 12px 36px rgba(15,23,42,0.12); transform:translateX(calc(100% + 40px)); opacity:0; pointer-events:none; transition:all .25s ease;">
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px 6px;">
-          <h3 style="margin:0; font-size:14px;"><i class="fa-solid fa-magnifying-glass-location" style="color:var(--brand, #3b82f6); margin-right:6px;"></i> Area safety inspector</h3>
-          <button id="drawer-close" style="border:none; background:#f1f5f9; width:28px; height:28px; border-radius:8px; cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+        <div class="insp-body">
+          <div id="insp-loading" class="insp-state" hidden>
+            <div class="skeleton sk-badge"></div><div class="skeleton sk-radar"></div><div class="skeleton sk-line"></div><div class="skeleton sk-line"></div>
+          </div>
+          <div id="insp-error" class="insp-state insp-error" hidden></div>
+          <div id="insp-oob" class="insp-state" hidden></div>
+
+          <div id="insp-content" hidden>
+            <div class="grade-row">
+              <div id="grade-badge" class="grade-badge" title="Local safety grade | risk score (lower risk = better grade)">
+                <span class="grade-letter">&ndash;</span><span class="grade-sep">|</span><span class="grade-score">&ndash;</span>
+              </div>
+              <div class="grade-meta">
+                <div id="grade-band" class="grade-band">&nbsp;</div>
+                <div id="grade-hour" class="dim"></div>
+              </div>
+            </div>
+
+            <div class="insp-section-title">CPTED profile <span class="dim">outer ring = safer</span></div>
+            <div class="radar-wrap"><canvas id="radar-chart"></canvas></div>
+            <ul id="cpted-list" class="cpted-list"></ul>
+
+            <div class="insp-section-title">Nearest safe havens <span class="dim" id="haven-radius"></span></div>
+            <div id="haven-list"></div>
+          </div>
         </div>
-        <div id="drawer-body" style="padding:4px 16px 16px;"></div>
       </aside>
-
-      <div id="toast" class="toast"></div>
-    </main>
-  </div>
-
-  <!-- ===================== DIAGNOSTICS MODAL ===================== -->
-  <div id="diag-modal">
-    <div class="diag-card">
-      <div class="diag-head">
-        <h2>&#128737;&#65039; Model diagnostics</h2>
-        <button id="diag-modal-close-btn" type="button" title="Close diagnostics">&times;</button>
-      </div>
-      <div class="diag-tabs" id="diag-tabs-root"></div>
-      <div class="diag-body" id="diag-body-root"></div>
     </div>
   </div>
 
-  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-minimap/3.6.1/Control.MiniMap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Leaflet.MiniMap plugin (must load after Leaflet) -->
+  <script src="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.js"></script>
+  <!-- Chart.js: inspector radar chart + 24-hour sparkline -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='enhancements.js') }}"></script>
   <script src="{{ url_for('static', filename='diagnostics.js') }}"></script>
-
-  <!-- Application Logic -->
-  <script>
-  (() => {
-    "use strict";
-
-    const TILE_URL = "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png";
-    const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-    const ROUTE_STYLE = {
-      shortest: { label: "Shortest", color: "#E11D48", icon: "fa-bolt" },
-      balanced: { label: "Balanced", color: "#F59E0B", icon: "fa-scale-balanced" },
-      safest:   { label: "Safest",   color: "#10B981", icon: "fa-shield-heart" },
-    };
-    const ROUTE_KEYS = ["shortest", "balanced", "safest"];
-    const WALK_M_PER_MIN = 83.3;
-    const RADAR_LABELS = ["Connectivity", "Police Proximity", "Commercial Eyes", "Visibility", "Road Hierarchy"];
-    const RADAR_KEYS = ["connectivity", "police_proximity", "commercial_eyes", "visibility", "road_hierarchy"];
-
-    const S = {
-      areaLoaded: false,
-      bbox: null,
-      landmarks: [],
-      origin: null,
-      dest: null,
-      routes: null,
-      activeKey: "safest",
-      diurnal: {},
-      inspectOn: false,
-      lastInspect: null,
-      inspectSeq: 0,
-    };
-
-    const $ = (id) => document.getElementById(id);
-    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    const pad = (h) => String(h).padStart(2, "0") + ":00";
-
-    function setStatus(el, msg, kind) {
-      if (!el) return;
-      el.textContent = msg || "";
-      el.className = "status" + (kind ? " " + kind : "");
-    }
-
-    let toastTimer = null;
-    function toast(msg) {
-      const t = $("toast");
-      if (!t) return;
-      t.textContent = msg;
-      t.classList.add("show");
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => t.classList.remove("show"), 3200);
-    }
-
-    async function api(path, opts) {
-      const res = await fetch(path, opts);
-      let data = null;
-      try { data = await res.json(); } catch (_) {}
-      if (!res.ok) throw new Error((data && (data.error || data.message)) || `Request failed (${res.status})`);
-      return data;
-    }
-
-    function riskColor(score) {
-      if (score == null || isNaN(score)) return "#94a3b8";
-      if (score < 35) return "#10B981";
-      if (score < 60) return "#F59E0B";
-      return "#E11D48";
-    }
-    const fmtDist = (m) => (m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m");
-    const fmtTime = (m) => Math.max(1, Math.round(m / WALK_M_PER_MIN)) + " min";
-
-    /* =====================================================================
-     * Map Initialization
-     * ===================================================================== */
-    const map = L.map("map", { zoomControl: false, preferCanvas: false }).setView([28.5535, 77.1998], 14);
-    L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(map);
-
-    const miniTiles = L.tileLayer(TILE_URL, { attribution: "", minZoom: 0, maxZoom: 18 });
-    const miniMap = new L.Control.MiniMap(miniTiles, {
-      position: "bottomright",
-      width: 160, height: 130,
-      zoomLevelOffset: -5,
-      toggleDisplay: true,
-      minimized: false,
-      aimingRectOptions: { color: "#E11D48", weight: 2, fillOpacity: 0.12, interactive: false },
-      shadowRectOptions: { color: "#0f172a", weight: 1, opacity: 0.1, fillOpacity: 0.05, interactive: false },
-    }).addTo(map);
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-
-    function fitOpts(extra) {
-      const wide = window.innerWidth > 900;
-      return Object.assign({ paddingTopLeft: wide ? [440, 70] : [20, 70], paddingBottomRight: wide ? [30, 30] : [20, window.innerHeight * 0.5] }, extra || {});
-    }
-
-    let miniBoundsLayer = null;
-    function updateMiniMapBounds(bounds) {
-      try {
-        const mm = miniMap._miniMap;
-        if (!mm) return;
-        if (miniBoundsLayer) mm.removeLayer(miniBoundsLayer);
-        miniBoundsLayer = L.rectangle(bounds, { color: "#3B82F6", weight: 2, dashArray: "4 4", fillColor: "#3B82F6", fillOpacity: 0.12, interactive: false }).addTo(mm);
-        mm.fitBounds(bounds.pad(0.35), { animate: false });
-      } catch (e) {}
-    }
-
-    let hullLayer = null;
-    const landmarkLayer = L.layerGroup().addTo(map);
-    const routeGroup = L.layerGroup().addTo(map);
-    const havenLayer = L.layerGroup().addTo(map);
-    const peakHazardLayer = L.layerGroup().addTo(map);
-
-    let routeLayers = {};
-    let originMarker = null, destMarker = null, probeMarker = null;
-
-    function pinIcon(kind, letter) {
-      return L.divIcon({ className: "", html: `<div class="pin ${kind}"><span>${letter}</span></div>`, iconSize: [30, 30], iconAnchor: [15, 30] });
-    }
-
-    function drawHull(geojson) {
-      if (hullLayer) { map.removeLayer(hullLayer); hullLayer = null; }
-      if (!geojson) return;
-      hullLayer = L.geoJSON(geojson, {
-        interactive: false,
-        style: { color: "#2563eb", weight: 2.5, dashArray: "6, 8", fillColor: "#3b82f6", fillOpacity: 0.05 },
-      }).addTo(map);
-      hullLayer.bringToBack();
-    }
-
-    function normBbox(b) {
-      if (!b) return null;
-      if (Array.isArray(b)) return { south: b[0], west: b[1], north: b[2], east: b[3] };
-      return b;
-    }
-
-    /* =====================================================================
-     * Area & Landmarks Loading
-     * ===================================================================== */
-    async function loadArea() {
-      const place = $("place-input").value.trim() || "Hauz Khas, Delhi, India";
-      const dist = parseInt($("dist-input").value, 10) || 2500;
-      $("load-area-btn").disabled = true;
-      setStatus($("area-status"), "Loading street network and model… the first load of a new area can take a while.", "");
-      try {
-        const a = await api("/api/load_area", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ place, dist }) });
-        S.areaLoaded = true;
-        clearAll(true);
-        setStatus($("area-status"), `Loaded ${a.place} · ${a.num_nodes.toLocaleString()} junctions · ${a.num_edges.toLocaleString()} street segments`, "ok");
-        ["start-input", "dest-input", "set-start-btn", "set-dest-btn"].forEach((id) => ($(id).disabled = false));
-        await loadLandmarks(true);
-      } catch (e) {
-        setStatus($("area-status"), e.message, "err");
-      } finally {
-        $("load-area-btn").disabled = false;
-        updateFindBtn();
-      }
-    }
-
-    async function loadLandmarks(fit) {
-      let d;
-      try { d = await api("/api/landmarks"); }
-      catch (e) { setStatus($("area-status"), "Could not load landmarks: " + e.message, "err"); return; }
-
-      S.areaLoaded = !!(d.area_loaded ?? d.hull_geojson);
-      S.bbox = normBbox(d.bbox);
-      S.landmarks = (d.landmarks || []).filter((l) => l.in_loaded_area === true);
-
-      drawHull(d.hull_geojson);
-      if (S.bbox) {
-        const b = L.latLngBounds([S.bbox.south, S.bbox.west], [S.bbox.north, S.bbox.east]);
-        updateMiniMapBounds(b);
-        if (fit) map.fitBounds(b.pad(0.05), fitOpts());
-      }
-      renderPills();
-      drawLandmarkDots();
-      if (S.areaLoaded) {
-        ["start-input", "dest-input", "set-start-btn", "set-dest-btn"].forEach((id) => ($(id).disabled = false));
-      }
-      updateFindBtn();
-    }
-
-    function drawLandmarkDots() {
-      landmarkLayer.clearLayers();
-      S.landmarks.forEach((l) => {
-        L.marker([l.lat, l.lon], { icon: L.divIcon({ className: "", html: '<div class="lm-dot" style="width:10px;height:10px;border-radius:50%;background:#fff;border:3px solid #6366f1;"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }), keyboard: false })
-          .bindTooltip(esc(l.name), { direction: "top", offset: [0, -6] })
-          .on("click", () => pickLandmark(l))
-          .addTo(landmarkLayer);
-      });
-    }
-
-    function renderPills() {
-      const box = $("pills");
-      if (!S.landmarks.length) {
-        box.innerHTML = '<span class="pill-empty">' + (S.areaLoaded ? "No preset landmarks inside this area." : "Load an area to see landmarks.") + "</span>";
-        return;
-      }
-      box.innerHTML = "";
-      S.landmarks.forEach((l, i) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "pill";
-        b.dataset.idx = i;
-        b.innerHTML = `<i class="fa-solid fa-location-crosshairs"></i> ${esc(l.name)}`;
-        b.addEventListener("click", () => pickLandmark(l));
-        box.appendChild(b);
-      });
-      refreshPillStates();
-    }
-
-    function refreshPillStates() {
-      document.querySelectorAll("#pills .pill").forEach((b) => {
-        const l = S.landmarks[+b.dataset.idx];
-        b.classList.toggle("is-origin", !!(S.origin && l && S.origin.name === l.name));
-        b.classList.toggle("is-dest", !!(S.dest && l && S.dest.name === l.name));
-      });
-    }
-
-    function pickLandmark(l) {
-      const pt = { lat: l.lat, lon: l.lon, name: l.name };
-      if (!S.origin) setPoint("origin", pt);
-      else if (!S.dest) setPoint("dest", pt);
-      else setPoint("dest", pt);
-      map.panTo([l.lat, l.lon], { animate: true });
-    }
-
-    function setPoint(kind, pt) {
-      if (kind === "origin") {
-        S.origin = pt;
-        if (originMarker) map.removeLayer(originMarker);
-        originMarker = L.marker([pt.lat, pt.lon], { icon: pinIcon("origin", "A"), zIndexOffset: 800 }).bindTooltip("Origin: " + esc(pt.name)).addTo(map);
-      } else {
-        S.dest = pt;
-        if (destMarker) map.removeLayer(destMarker);
-        destMarker = L.marker([pt.lat, pt.lon], { icon: pinIcon("dest", "B"), zIndexOffset: 800 }).bindTooltip("Destination: " + esc(pt.name)).addTo(map);
-      }
-      syncSelection();
-    }
-
-    function syncSelection() {
-      $("sel-origin").textContent = S.origin ? S.origin.name : "Area centre (default)";
-      $("sel-dest").textContent = S.dest ? S.dest.name : "Not set";
-      refreshPillStates();
-      updateFindBtn();
-    }
-
-    function clearAll(keepArea) {
-      if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
-      if (destMarker) { map.removeLayer(destMarker); destMarker = null; }
-      S.origin = null; S.dest = null;
-      clearRoutes();
-      syncSelection();
-      setStatus($("location-status"), "");
-      setStatus($("route-status"), "");
-    }
-
-    function swapPoints() {
-      if (!S.origin || !S.dest) { toast("Set both an origin and a destination to swap them."); return; }
-      const o = S.origin, d = S.dest;
-      setPoint("origin", d); setPoint("dest", o);
-    }
-
-    async function geocodeInto(kind) {
-      const input = $(kind === "origin" ? "start-input" : "dest-input");
-      const q = input.value.trim();
-      if (!q) { setStatus($("location-status"), "Type a place to search for.", "warn"); return; }
-      setStatus($("location-status"), "Searching…", "");
-      try {
-        const r = await api("/api/geocode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: q }) });
-        setPoint(kind, { lat: r.lat, lon: r.lon, name: q });
-        map.flyTo([r.lat, r.lon], Math.max(map.getZoom(), 15), { duration: 0.6 });
-        setStatus($("location-status"), `${kind === "origin" ? "Origin" : "Destination"} set.`, "ok");
-      } catch (e) {
-        setStatus($("location-status"), e.message, "err");
-      }
-    }
-
-    function updateFindBtn() { $("find-route-btn").disabled = !(S.areaLoaded && S.dest); }
-
-    const hourSlider = $("hour-slider");
-    const currentHour = () => parseInt(hourSlider.value, 10);
-
-    function clearRoutes() {
-      routeGroup.clearLayers(); routeLayers = {};
-      peakHazardLayer.clearLayers();
-      S.routes = null; S.diurnal = {};
-      $("results-panel").style.display = "none";
-      $("diurnal-panel").style.display = "none";
-      if (diurnalChart) { diurnalChart.destroy(); diurnalChart = null; }
-    }
-
-    function normalizeRoute(r) {
-      return {
-        geojson: r.geojson,
-        length_m: r.distance_m ?? r.length_m ?? 0,
-        risk: r.avg_risk ?? r.risk_score ?? r.avg_insecurity ?? null,
-        peak: r.peak_segment_risk ?? (r.peak_segment ? r.peak_segment.risk_score : null),
-        peak_segment: r.peak_segment || null,
-        edge_ids: r.edge_ids || [],
-        reasons: r.reasons || r.explanations || [],
-        segments: r.high_risk_segments || r.segments || [],
-      };
-    }
-
-    async function findRoutes() {
-      if (!S.dest) return;
-      const btn = $("find-route-btn");
-      btn.disabled = true;
-      setStatus($("route-status"), "Scoring every street segment and searching for routes…", "");
-      const body = {
-        place: $("place-input").value.trim() || undefined,
-        dist: parseInt($("dist-input").value, 10) || undefined,
-        hour: currentHour(),
-        lambda: parseFloat($("lambda-slider").value),
-        dest: [S.dest.lat, S.dest.lon],
-      };
-      if (S.origin) body.orig = [S.origin.lat, S.origin.lon];
-      try {
-        const r = await api("/api/route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        const routes = r.routes || r;
-        clearRoutes();
-        S.routes = {};
-        ROUTE_KEYS.forEach((k) => { if (routes[k]) S.routes[k] = normalizeRoute(routes[k]); });
-        renderRoutes(r.warnings || []);
-        setStatus($("route-status"), `Routes ready for ${pad(currentHour())}.`, "ok");
-      } catch (e) {
-        setStatus($("route-status"), e.message, "err");
-      } finally {
-        updateFindBtn();
-      }
-    }
-
-    /* =====================================================================
-     * ROUTE RENDERING & EXPLANATIONS
-     * ===================================================================== */
-    function renderRoutes(warnings) {
-      const allBounds = [];
-      ROUTE_KEYS.forEach((k) => {
-        const r = S.routes[k]; if (!r) return;
-        const c = ROUTE_STYLE[k].color;
-        const halo = L.geoJSON(r.geojson, { style: { color: c, weight: 14, opacity: 0.28, lineCap: "round", lineJoin: "round" }, interactive: false });
-        const line = L.geoJSON(r.geojson, { style: { color: c, weight: 5, opacity: 1, lineCap: "round", lineJoin: "round", className: "rt-line-" + k } });
-        line.on("click", () => selectRoute(k));
-        halo.addTo(routeGroup); line.addTo(routeGroup);
-        routeLayers[k] = { halo, line };
-        allBounds.push(line.getBounds());
-      });
-
-      if (allBounds.length) {
-        let b = allBounds[0];
-        allBounds.slice(1).forEach((x) => (b = b.extend(x)));
-        map.fitBounds(b.pad(0.18), fitOpts({ maxZoom: 17 }));
-      }
-
-      const container = $("route-rows");
-      container.innerHTML = `
-        <div class="route-selector">
-          ${ROUTE_KEYS.filter(k => S.routes[k]).map(k => {
-            const r = S.routes[k];
-            const st = ROUTE_STYLE[k];
-            return `
-              <div class="route-tab-btn" id="tab-${k}" onclick="window._selectRoute('${k}')">
-                <div class="route-tab-title" style="color:${st.color}">
-                  <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${st.color};margin-right:4px;"></span>${st.label}
-                </div>
-                <div class="route-tab-metric">${fmtDist(r.length_m)}</div>
-                <div class="route-tab-sub">Risk ${Math.round(r.risk ?? 0)} &bull; Peak ${Math.round(r.peak ?? 0)}</div>
-              </div>`;
-          }).join("")}
-        </div>
-
-        <!-- Active Route Key Metrics Grid -->
-        <div class="route-stats-grid" id="route-stats-grid"></div>
-
-        <!-- Why Route is Safe/Unsafe (Reason Badges & Environmental Chips) -->
-        <div id="route-factors-box" class="factor-list"></div>
-
-        <!-- Highlighted Route Segments Accordion -->
-        <div id="route-segments-container"></div>
-      `;
-
-      const w = $("warnings");
-      if (warnings && warnings.length) {
-        w.style.display = "block";
-        w.innerHTML = warnings.map((x) => `<div><i class="fa-solid fa-triangle-exclamation"></i> ${esc(x)}</div>`).join("");
-      } else {
-        w.style.display = "none";
-      }
-
-      $("results-panel").style.display = "block";
-      $("diurnal-panel").style.display = "block";
-      $("scrub-slider").value = currentHour();
-      
-      window._selectRoute = selectRoute;
-      selectRoute(S.routes[S.activeKey] ? S.activeKey : "safest");
-    }
-
-    // Midpoint of a [lat, lon] polyline measured along its length (not just the middle vertex).
-    function polylineMidpoint(coords) {
-      if (coords.length === 1) return coords[0];
-      const segs = []; let total = 0;
-      for (let i = 1; i < coords.length; i++) {
-        const d = L.latLng(coords[i - 1]).distanceTo(L.latLng(coords[i]));
-        segs.push(d); total += d;
-      }
-      if (total === 0) return coords[0];
-      let target = total / 2;
-      for (let i = 0; i < segs.length; i++) {
-        if (target <= segs[i] || i === segs.length - 1) {
-          const t = segs[i] ? target / segs[i] : 0;
-          const a = coords[i], b = coords[i + 1];
-          return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-        }
-        target -= segs[i];
-      }
-      return coords[Math.floor(coords.length / 2)];
-    }
-
-    function selectRoute(key) {
-      if (!S.routes || !S.routes[key]) return;
-      S.activeKey = key;
-      const r = S.routes[key];
-      const st = ROUTE_STYLE[key];
-
-      peakHazardLayer.clearLayers();
-
-      ROUTE_KEYS.forEach((k) => {
-        const tab = $("tab-" + k);
-        if (tab) tab.className = "route-tab-btn" + (k === key ? ` active-${k}` : "");
-        const l = routeLayers[k]; if (!l) return;
-        const on = (k === key);
-        l.halo.setStyle({ opacity: on ? 0.38 : 0.1, weight: on ? 16 : 10 });
-        l.line.setStyle({ opacity: on ? 1 : 0.55, weight: on ? 6 : 4 });
-        if (on) { l.halo.bringToFront(); l.line.bringToFront(); }
-      });
-
-      const statsGrid = $("route-stats-grid");
-      if (statsGrid) {
-        statsGrid.innerHTML = `
-          <div class="route-stat-item">
-            <span class="stat-label">Distance</span>
-            <span class="stat-val">${fmtDist(r.length_m)}</span>
-          </div>
-          <div class="route-stat-item">
-            <span class="stat-label">Avg Risk</span>
-            <span class="stat-val" style="color:${riskColor(r.risk)}">${r.risk == null ? "–" : Math.round(r.risk)}/100</span>
-          </div>
-          <div class="route-stat-item">
-            <span class="stat-label">Peak Hazard</span>
-            <span class="stat-val" style="color:${riskColor(r.peak)}">${r.peak == null ? "–" : Math.round(r.peak)}/100</span>
-          </div>
-        `;
-      }
-
-      // Render Peak Hazard Bottleneck Warning
-      let peakBannerBox = $("peak-hazard-banner-box");
-      if (!peakBannerBox) {
-        peakBannerBox = document.createElement("div");
-        peakBannerBox.id = "peak-hazard-banner-box";
-        statsGrid.parentNode.insertBefore(peakBannerBox, statsGrid.nextSibling);
-      }
-
-      const peakSeg = r.peak_segment || (r.segments && r.segments[0]) || null;
-      const peakVal = Math.round(r.peak ?? (peakSeg ? (peakSeg.risk_score ?? peakSeg.risk ?? 0) : 0));
-
-      if (peakVal >= 40 && peakSeg) {
-        const lengthM = Math.round(peakSeg.length_m || 0);
-        const streetName = peakSeg.street_name || (peakSeg.reasons && peakSeg.reasons[0]) || "";
-        const micro = peakSeg.micro_explanation || {};
-        const riskFactors = micro.top_risk_factors || [];
-
-        const reasonsList = riskFactors.length 
-          ? riskFactors.map(f => f.text || f.factor) 
-          : (r.reasons && r.reasons.length ? r.reasons.slice(0, 2) : ["Limited street lighting and lower passive surveillance"]);
-
-        peakBannerBox.innerHTML = `
-          <div class="peak-hazard-banner">
-            <div class="peak-hazard-header">
-              <span><i class="fa-solid fa-triangle-exclamation"></i> Peak Hazard Bottleneck</span>
-              <span style="font-family:var(--font-mono); font-size:12px;">${peakVal}/100 Risk</span>
-            </div>
-            <div class="peak-hazard-body">
-              Although this path averages <b>${Math.round(r.risk ?? 0)}/100</b>, a stretch of <b>${lengthM} m</b> ${streetName ? `(${esc(streetName)})` : ''} reaches maximum caution.
-            </div>
-            
-            <div class="peak-reasons-list">
-              ${reasonsList.map(txt => `
-                <div class="peak-reason-tag">
-                  <i class="fa-solid fa-circle-exclamation"></i>
-                  <span>${esc(txt)}</span>
-                </div>
-              `).join("")}
-            </div>
-
-            ${peakSeg.coords && peakSeg.coords.length ? `
-              <div class="peak-hazard-action" onclick="window.zoomToPeakStretch()">
-                <i class="fa-solid fa-crosshairs"></i> Locate this ${lengthM} m stretch on map
-              </div>
-            ` : ""}
-          </div>
-        `;
-
-        if (peakSeg.coords && peakSeg.coords.length) {
-          // Dashed overlay: butt caps keep the gaps visible (round caps would fill them in).
-          const peakLine = L.polyline(peakSeg.coords, {
-            color: "#ff2a5f",
-            weight: 8,
-            dashArray: "8, 8",
-            opacity: 0.85,
-            lineCap: "butt",
-            lineJoin: "round",
-            className: "peak-hazard-polyline",
-            interactive: false,
-          }).addTo(peakHazardLayer);
-
-          // Warning badge at the true midpoint (by length) of the stretch.
-          const midPt = polylineMidpoint(peakSeg.coords);
-          const warnIcon = L.divIcon({
-            className: "",
-            html: '<div class="peak-warn-marker">⚠️</div>',
-            iconSize: [26, 26],
-            iconAnchor: [13, 13],
-          });
-          L.marker(midPt, { icon: warnIcon, zIndexOffset: 1000 })
-            .bindTooltip(`⚠️ Peak Bottleneck: ${peakVal}/100 Risk (${lengthM} m)`)
-            .addTo(peakHazardLayer);
-
-          window.zoomToPeakStretch = () => {
-            map.fitBounds(peakLine.getBounds().pad(0.35), { maxZoom: 18, animate: true });
-          };
-        }
-      } else {
-        peakBannerBox.innerHTML = "";
-      }
-
-      // Populate Reasons / Factors list
-      const factorsBox = $("route-factors-box");
-      if (factorsBox) {
-        if (r.reasons && r.reasons.length) {
-          factorsBox.innerHTML = r.reasons.map((reason) => {
-            let kind = "neutral";
-            const lower = reason.toLowerCase();
-            if (lower.includes("no shops") || lower.includes("farther from police") || lower.includes("peak") || lower.includes("high") || lower.includes("elevated") || lower.includes("shut")) {
-              kind = "danger";
-            } else if (lower.includes("safe") || lower.includes("low risk") || lower.includes("commercial eyes")) {
-              kind = "safe";
-            }
-            return `<div class="factor-chip ${kind}">&bull; ${esc(reason)}</div>`;
-          }).join("");
-        } else {
-          factorsBox.innerHTML = `<div class="factor-chip neutral">&bull; Baseline neighborhood street environment throughout this path.</div>`;
-        }
-      }
-
-      // Populate Segments Accordion (Clean Vertical Stack)
-      const segBox = $("route-segments-container");
-      if (segBox) {
-        if (r.segments && r.segments.length) {
-          segBox.innerHTML = `
-            <div class="accordion-header" onclick="window.toggleSegmentsAccordion()">
-              <span>Highlighted Route Segments (${r.segments.length})</span>
-              <i class="fa-solid fa-chevron-down chevron" id="seg-chevron"></i>
-            </div>
-            <div class="accordion-body" id="seg-accordion-body">
-              ${r.segments.map(seg => {
-                const segScore = Math.round(seg.risk_score ?? seg.risk ?? 0);
-                const segLen = Math.round(seg.length_m ?? 0);
-                const segText = seg.reason 
-                  || (seg.micro_explanation?.top_risk_factors?.[0]?.text) 
-                  || (seg.reasons && seg.reasons[0]) 
-                  || seg.description 
-                  || "Elevated street risk";
-
-                return `
-                  <div class="segment-card">
-                    <div class="segment-card-top">
-                      <span style="color:${riskColor(segScore)}">Risk ${segScore}/100</span>
-                      <span style="color:#71717a">${segLen} m</span>
-                    </div>
-                    <div class="segment-card-desc">${esc(segText)}</div>
-                  </div>
-                `;
-              }).join("")}
-            </div>
-          `;
-        } else {
-          segBox.innerHTML = "";
-        }
-      }
-
-      $("diurnal-route-name").innerHTML = `<span style="color:${st.color};font-weight:700">${st.label}</span>`;
-      loadDiurnal(key);
-    }
-
-    window.toggleSegmentsAccordion = function() {
-      const body = document.getElementById("seg-accordion-body");
-      const chev = document.getElementById("seg-chevron");
-      if (!body) return;
-      const open = body.classList.toggle("open");
-      if (chev) chev.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
-    };
-
-    /* =====================================================================
-     * Diurnal Chart Handling
-     * ===================================================================== */
-    let diurnalChart = null;
-
-    async function loadDiurnal(key) {
-      const r = S.routes[key];
-      if (!r || !r.edge_ids.length) { setStatus($("diurnal-status"), "No edge data for this route.", "warn"); return; }
-      if (S.diurnal[key]) { drawDiurnal(key); return; }
-      setStatus($("diurnal-status"), "Computing 24-hour profile…", "");
-      try {
-        const d = await api("/api/route_diurnal_profile?edge_ids=" + r.edge_ids.join(","));
-        S.diurnal[key] = d;
-        if (S.activeKey === key) drawDiurnal(key);
-      } catch (e) {
-        setStatus($("diurnal-status"), e.message, "err");
-      }
-    }
-
-    function drawDiurnal(key) {
-      const d = S.diurnal[key]; if (!d) return;
-      setStatus($("diurnal-status"), "");
-      const hours = Array.from({ length: 24 }, (_, i) => i);
-      const color = ROUTE_STYLE[key].color;
-      const h = parseInt($("scrub-slider").value, 10);
-      const marker = hours.map((x) => (x === h ? d.hourly_risk[x] : null));
-
-      if (diurnalChart) diurnalChart.destroy();
-      const ctx = $("diurnal-chart").getContext("2d");
-      const grad = ctx.createLinearGradient(0, 0, 0, 160);
-      grad.addColorStop(0, color + "55"); grad.addColorStop(1, color + "05");
-
-      diurnalChart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: hours.map((x) => String(x).padStart(2, "0")),
-          datasets: [
-            { label: "Avg route risk", data: d.hourly_risk, borderColor: color, backgroundColor: grad, fill: true, tension: 0.35, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4 },
-            { label: "Selected hour", data: marker, borderColor: "#0f172a", backgroundColor: "#fff", pointRadius: 7, pointBorderWidth: 3, showLine: false },
-          ],
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false, animation: { duration: 350 },
-          interaction: { mode: "index", intersect: false },
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { title: (it) => it[0].label + ":00", label: (it) => (it.parsed.y == null ? null : `Risk ${it.parsed.y.toFixed(1)}`) } },
-          },
-          scales: {
-            x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 10 } } },
-            y: { suggestedMin: 0, suggestedMax: 100, grid: { color: "#27272a" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Risk (0–100)", font: { size: 10 } } },
-          },
-          onClick: (_, els) => { if (els.length) { $("scrub-slider").value = els[0].index; onScrub(); } },
-        },
-      });
-
-      $("diurnal-meta").innerHTML = `
-        <span class="tag peak" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:rgba(244,63,94,0.15); color:#fecdd3; border:1px solid rgba(244,63,94,0.3);"><i class="fa-solid fa-moon"></i> Riskiest ${pad(d.peak_hour)} (${d.hourly_risk[d.peak_hour].toFixed(1)})</span>
-        <span class="tag safe" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:rgba(16,185,129,0.15); color:#a7f3d0; border:1px solid rgba(16,185,129,0.3);"><i class="fa-solid fa-sun"></i> Safest ${pad(d.safest_hour)} (${d.hourly_risk[d.safest_hour].toFixed(1)})</span>
-        <span class="tag" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:#18181b; border:1px solid #27272a; color:#e4e4e7;"><i class="fa-solid fa-ruler"></i> ${fmtDist(d.length_m)}</span>`;
-      onScrub();
-    }
-
-    function onScrub() {
-      const h = parseInt($("scrub-slider").value, 10);
-      $("scrub-time").textContent = pad(h);
-      const d = S.diurnal[S.activeKey];
-      if (!d) { $("scrub-readout").textContent = "—"; return; }
-      const v = d.hourly_risk[h];
-      const delta = v - d.hourly_risk[d.safest_hour];
-      $("scrub-readout").innerHTML = `Risk <b style="color:${riskColor(v)}">${v.toFixed(1)}</b>` + (h === d.safest_hour ? " · safest hour" : h === d.peak_hour ? " · riskiest hour" : ` · +${delta.toFixed(1)} vs safest`);
-      if (diurnalChart) {
-        diurnalChart.data.datasets[1].data = d.hourly_risk.map((x, i) => (i === h ? x : null));
-        diurnalChart.update("none");
-      }
-    }
-
-    /* =====================================================================
-     * Area Safety Inspector
-     * ===================================================================== */
-    let radarChart = null;
-
-    function setInspect(on) {
-      S.inspectOn = on;
-      $("inspect-toggle").classList.toggle("on", on);
-      $("inspect-toggle").setAttribute("aria-pressed", on);
-      $("inspect-toggle").querySelector(".state").textContent = on ? "ON" : "OFF";
-      document.body.classList.toggle("inspecting", on);
-      if (!on) closeDrawer();
-      else toast("Inspect mode on: click the map to check an area.");
-    }
-
-    function closeDrawer() {
-      $("drawer").style.transform = "translateX(calc(100% + 40px))";
-      $("drawer").style.opacity = "0";
-      $("drawer").style.pointerEvents = "none";
-      if (probeMarker) { map.removeLayer(probeMarker); probeMarker = null; }
-      havenLayer.clearLayers();
-      S.lastInspect = null;
-    }
-
-    map.on("click", (e) => {
-      if (!S.inspectOn) return;
-      if (!S.areaLoaded) { toast("Load an area first."); return; }
-      inspectPoint(e.latlng.lat, e.latlng.lng);
-    });
-
-    async function inspectPoint(lat, lon) {
-      const seq = ++S.inspectSeq;
-      S.lastInspect = { lat, lon };
-      if (probeMarker) map.removeLayer(probeMarker);
-      probeMarker = L.marker([lat, lon], { icon: L.divIcon({ className: "", html: '<div class="probe" style="width:16px;height:16px;border-radius:50%;background:#3B82F6;border:2px solid #fff;box-shadow:0 0 10px rgba(59,130,246,0.6);"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }), interactive: false, zIndexOffset: 900 }).addTo(map);
-      havenLayer.clearLayers();
-
-      $("drawer").style.transform = "translateX(0)";
-      $("drawer").style.opacity = "1";
-      $("drawer").style.pointerEvents = "auto";
-      $("drawer-body").innerHTML = '<div style="padding:20px 4px; color:#8b8b93;">Analysing safety factors at ' + pad(currentHour()) + "…</div>";
-      if (radarChart) { radarChart.destroy(); radarChart = null; }
-
-      try {
-        const d = await api(`/api/inspect_point?lat=${lat}&lon=${lon}&hour=${currentHour()}`);
-        if (seq !== S.inspectSeq) return;
-        renderInspection(d);
-      } catch (e) {
-        if (seq !== S.inspectSeq) return;
-        $("drawer-body").innerHTML = `<div style="padding:12px;background:rgba(244,63,94,0.1);border:1px solid #f43f5e;border-radius:10px;color:#fecdd3;">${esc(e.message)}</div>`;
-      }
-    }
-
-    function havenKind(t) { return /police/i.test(t || "") ? "police" : "shop"; }
-
-    function renderInspection(d) {
-      const score = d.risk_score;
-      const col = riskColor(score);
-      const cp = d.cpted || d.cpted_metrics || {};
-      const havens = d.safe_havens || [];
-      const street = d.edge && d.edge.name ? d.edge.name : null;
-
-      $("drawer-body").innerHTML = `
-        <div style="display:flex; align-items:center; gap:12px; margin:6px 0 10px;">
-          <div style="width:64px; height:64px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:22px; background:${col};">${Math.round(score)}</div>
-          <div>
-            <div style="font-weight:800; font-size:15px; color:${col}; text-transform:uppercase;">${esc(d.risk_band || "")}</div>
-            <div style="color:#8b8b93; font-size:11.5px; line-height:1.4;">Local risk score at ${pad(currentHour())}${street ? `<br>Street: <b>${esc(street)}</b>` : ""}</div>
-          </div>
-        </div>
-        <div style="font-size:11px; font-weight:700; color:#8b8b93; text-transform:uppercase; margin:10px 0 4px;">CPTED safety factors (outer = safer)</div>
-        <div style="position:relative; height:210px;"><canvas id="radar-chart"></canvas></div>
-        <div style="font-size:11px; font-weight:700; color:#8b8b93; text-transform:uppercase; margin:10px 0 4px;">Closest safe havens</div>
-        <div id="haven-list">
-          ${havens.length ? havens.map((h, i) => `
-            <div class="haven" data-i="${i}" style="display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #27272a; border-radius:6px; margin-bottom:4px; background:#111114;">
-              <div class="ic ${havenKind(h.type)}"><i class="fa-solid ${havenKind(h.type) === "police" ? "fa-shield" : "fa-store"}"></i></div>
-              <div><div class="nm" style="font-weight:600; font-size:12px; color:#e4e4e7;">${esc(h.name)}</div><div class="ty" style="font-size:10px; color:#8b8b93;">${esc(h.type)}</div></div>
-              <div class="ds" style="margin-left:auto; font-weight:700; font-size:11px; color:#06b6d4;">${fmtDist(h.distance_m ?? h.dist_m ?? 0)}</div>
-            </div>
-          `).join("") : '<div style="font-size:11.5px;color:#8b8b93;padding:6px 0;">No police station or 24/7 shop within range.</div>'}
-        </div>
-        <div class="row">
-          <button class="secondary" id="use-origin" type="button"><i class="fa-solid fa-circle-dot" aria-hidden="true"></i><span>Use as origin</span></button>
-          <button class="secondary" id="use-dest" type="button"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i><span>Use as dest</span></button>
-        </div>
-      `;
-
-      const vals = RADAR_KEYS.map((k) => Math.max(0, Math.min(1, Number(cp[k] ?? 0))));
-      if (radarChart) radarChart.destroy();
-      radarChart = new Chart($("radar-chart").getContext("2d"), {
-        type: "radar",
-        data: {
-          labels: RADAR_LABELS,
-          datasets: [{ label: "Safety factors", data: vals, backgroundColor: "rgba(6,182,212,0.2)", borderColor: "#06b6d4", borderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#06b6d4", pointRadius: 4 }],
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.25, display: false }, grid: { color: "#27272a" }, angleLines: { color: "#27272a" }, pointLabels: { font: { size: 10.5, weight: "600" }, color: "#a1a1aa" } } },
-        },
-      });
-
-      havenLayer.clearLayers();
-      havens.forEach((h, i) => {
-        if (h.lat == null || h.lon == null) return;
-        const k = havenKind(h.type);
-        L.marker([h.lat, h.lon], { icon: L.divIcon({ className: "", html: `<div class="haven-pin ${k}" style="width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11px;background:${k==='police'?'#2563eb':'#059669'};border:2px solid #fff;"><i class="fa-solid ${k==='police'?'fa-shield':'fa-store'}"></i></div>`, iconSize: [24, 24], iconAnchor: [12, 12] }) })
-          .bindTooltip(`${esc(h.name)} · ${fmtDist(h.distance_m ?? h.dist_m ?? 0)}`).addTo(havenLayer);
-      });
-
-      const li = S.lastInspect;
-      $("use-origin").onclick = () => { setPoint("origin", { lat: li.lat, lon: li.lon, name: street || `Pin (${li.lat.toFixed(4)}, ${li.lon.toFixed(4)})` }); };
-      $("use-dest").onclick = () => { setPoint("dest", { lat: li.lat, lon: li.lon, name: street || `Pin (${li.lat.toFixed(4)}, ${li.lon.toFixed(4)})` }); };
-    }
-
-    /* =====================================================================
-     * Event Wiring
-     * ===================================================================== */
-    $("load-area-btn").addEventListener("click", loadArea);
-    $("set-start-btn").addEventListener("click", () => geocodeInto("origin"));
-    $("set-dest-btn").addEventListener("click", () => geocodeInto("dest"));
-    $("start-input").addEventListener("keydown", (e) => { if (e.key === "Enter") geocodeInto("origin"); });
-    $("dest-input").addEventListener("keydown", (e) => { if (e.key === "Enter") geocodeInto("dest"); });
-    $("swap-btn").addEventListener("click", swapPoints);
-    $("clear-btn").addEventListener("click", () => clearAll());
-    $("find-route-btn").addEventListener("click", findRoutes);
-    $("inspect-toggle").addEventListener("click", () => setInspect(!S.inspectOn));
-    $("drawer-close").addEventListener("click", closeDrawer);
-
-    $("lambda-slider").addEventListener("input", (e) => ($("lambda-value").textContent = parseFloat(e.target.value).toFixed(2)));
-
-    let hourTimer = null;
-    hourSlider.addEventListener("input", () => {
-      $("hour-value").textContent = pad(currentHour());
-      clearTimeout(hourTimer);
-      hourTimer = setTimeout(() => {
-        if (S.inspectOn && S.lastInspect && $("drawer").style.opacity === "1") inspectPoint(S.lastInspect.lat, S.lastInspect.lon);
-      }, 350);
-    });
-
-    $("scrub-slider").addEventListener("input", onScrub);
-    $("apply-hour-btn").addEventListener("click", () => {
-      const h = parseInt($("scrub-slider").value, 10);
-      hourSlider.value = h; $("hour-value").textContent = pad(h);
-      findRoutes();
-    });
-
-    /* Diagnostics Modal Bridge */
-    const modal = $("diag-modal");
-    $("diag-btn").addEventListener("click", () => modal.classList.add("open"));
-    $("diag-modal-close-btn").addEventListener("click", () => modal.classList.remove("open"));
-    window.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("open"); });
-
-    window.addEventListener("resize", () => map.invalidateSize());
-
-    /* Boot sequence */
-    (async function init() {
-      const h = new Date().getHours();
-      hourSlider.value = h; $("hour-value").textContent = pad(h);
-      $("scrub-slider").value = h;
-
-      try {
-        const d = await api("/api/landmarks");
-        if (d.area_loaded) {
-          if (d.place) $("place-input").value = d.place;
-          setStatus($("area-status"), `Area ready: ${d.place || "loaded"}`, "ok");
-          await loadLandmarks(true);
-        } else {
-          await loadArea();
-        }
-      } catch (e) {
-        setStatus($("area-status"), "Could not reach server: " + e.message, "err");
-      }
-    })();
-  })();
-  </script>
 </body>
 </html>
