@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
   
   <!-- Main HUD Stylesheet with Cache-Buster -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=115">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=116">
 
   <style>
     /* Critical Form & Layout Resets */
@@ -63,10 +63,18 @@
     .route-selector {
       display: grid !important;
       grid-template-columns: repeat(3, 1fr) !important;
+      grid-auto-rows: 1fr !important;
+      align-items: stretch !important;
       gap: 6px !important;
+      width: 100% !important;
       margin-bottom: 12px !important;
     }
     .route-tab-btn {
+      box-sizing: border-box !important;
+      min-width: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
       background: #18181b !important;
       border: 1px solid #27272a !important;
       border-radius: 8px !important;
@@ -196,14 +204,18 @@
     }
     .peak-hazard-action:hover { color: #7dd3fc !important; }
 
-    /* Map Hazard Layer: Striped/Dashed Overlay Line */
+    /* Map Hazard Layer: stroke, weight, dash and opacity are set in JS (Leaflet options);
+       CSS only adds the glow. Do NOT set stroke-linecap: round here -- with an 8px line and
+       8px dashes, round caps close every gap and the dashes render as a solid line. */
     .peak-hazard-polyline {
-      stroke: #ff2a5f !important;
-      stroke-width: 8 !important;
-      stroke-opacity: 0.85 !important;
-      stroke-dasharray: 8, 8 !important;
-      stroke-linecap: round !important;
-      filter: drop-shadow(0 0 6px rgba(255, 42, 95, 0.75)) !important;
+      filter: drop-shadow(0 0 6px rgba(255, 42, 95, 0.7));
+    }
+    .peak-warn-marker {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: grid; place-items: center;
+      background: #ff2a5f; border: 2px solid #ffffff;
+      font-size: 13px; line-height: 1;
+      box-shadow: 0 0 0 4px rgba(255, 42, 95, 0.28), 0 4px 10px rgba(0, 0, 0, 0.5);
     }
 
     /* Environmental Factor Chips */
@@ -257,28 +269,35 @@
       user-select: none !important;
     }
     .accordion-header:hover { background: #27272a !important; }
+    /* Collapsed by default; JS toggles .open. (An inline display:none can never beat
+       a stylesheet display:flex !important, so visibility is class-driven.) */
     .accordion-body {
-      display: flex !important;
-      flex-direction: column !important;
-      gap: 8px !important;
+      display: none !important;
       margin-top: 8px !important;
       max-height: 280px !important;
       overflow-y: auto !important;
     }
+    .accordion-body.open {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px !important;
+    }
+    .accordion-body > * { flex: 0 0 auto !important; }
     .segment-card {
       display: block !important;
       width: 100% !important;
+      box-sizing: border-box !important;
       background: #121215 !important;
       border: 1px solid #27272a !important;
       border-left: 3px solid #f43f5e !important;
+      padding: 10px !important;
       border-radius: 6px !important;
-      padding: 8px 10px !important;
-      box-sizing: border-box !important;
     }
     .segment-card-top {
       display: flex !important;
       justify-content: space-between !important;
       align-items: center !important;
+      gap: 8px !important;
       font-family: var(--font-mono, monospace) !important;
       font-size: 11px !important;
       font-weight: 700 !important;
@@ -289,22 +308,7 @@
       line-height: 1.4 !important;
       color: #a1a1aa !important;
       word-break: break-word !important;
-    }
-
-    #drawer .row {
-      display: flex !important;
-      flex-direction: row !important;
-      gap: 8px !important;
-      margin-top: 14px !important;
-    }
-    #drawer .row button {
-      flex: 1 1 50% !important;
-      width: auto !important;
-      min-width: 110px !important;
-      height: 36px !important;
-      padding: 6px 10px !important;
-      font-size: 11.5px !important;
-      white-space: nowrap !important;
+      overflow-wrap: anywhere !important;
     }
   </style>
 </head>
@@ -855,6 +859,27 @@
       selectRoute(S.routes[S.activeKey] ? S.activeKey : "safest");
     }
 
+    // Midpoint of a [lat, lon] polyline measured along its length (not just the middle vertex).
+    function polylineMidpoint(coords) {
+      if (coords.length === 1) return coords[0];
+      const segs = []; let total = 0;
+      for (let i = 1; i < coords.length; i++) {
+        const d = L.latLng(coords[i - 1]).distanceTo(L.latLng(coords[i]));
+        segs.push(d); total += d;
+      }
+      if (total === 0) return coords[0];
+      let target = total / 2;
+      for (let i = 0; i < segs.length; i++) {
+        if (target <= segs[i] || i === segs.length - 1) {
+          const t = segs[i] ? target / segs[i] : 0;
+          const a = coords[i], b = coords[i + 1];
+          return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+        }
+        target -= segs[i];
+      }
+      return coords[Math.floor(coords.length / 2)];
+    }
+
     function selectRoute(key) {
       if (!S.routes || !S.routes[key]) return;
       S.activeKey = key;
@@ -940,20 +965,29 @@
         `;
 
         if (peakSeg.coords && peakSeg.coords.length) {
+          // Dashed overlay: butt caps keep the gaps visible (round caps would fill them in).
           const peakLine = L.polyline(peakSeg.coords, {
+            color: "#ff2a5f",
+            weight: 8,
+            dashArray: "8, 8",
+            opacity: 0.85,
+            lineCap: "butt",
+            lineJoin: "round",
             className: "peak-hazard-polyline",
-            lineCap: "round",
+            interactive: false,
           }).addTo(peakHazardLayer);
 
-          const midIdx = Math.floor(peakSeg.coords.length / 2);
-          const midPt = peakSeg.coords[midIdx];
+          // Warning badge at the true midpoint (by length) of the stretch.
+          const midPt = polylineMidpoint(peakSeg.coords);
           const warnIcon = L.divIcon({
-            className: '',
-            html: '<div style="background:#f43f5e; color:#fff; border-radius:50%; width:20px; height:20px; display:grid; place-items:center; font-size:10px; font-weight:800; border:2px solid #fff; box-shadow:0 0 8px rgba(0,0,0,0.5);">⚠️</div>',
-            iconSize: [20, 20],
-            iconAnchor: [10, 10]
+            className: "",
+            html: '<div class="peak-warn-marker">⚠️</div>',
+            iconSize: [26, 26],
+            iconAnchor: [13, 13],
           });
-          L.marker(midPt, { icon: warnIcon }).bindTooltip(`⚠️ Peak Bottleneck: ${peakVal}/100 Risk (${lengthM} m)`).addTo(peakHazardLayer);
+          L.marker(midPt, { icon: warnIcon, zIndexOffset: 1000 })
+            .bindTooltip(`⚠️ Peak Bottleneck: ${peakVal}/100 Risk (${lengthM} m)`)
+            .addTo(peakHazardLayer);
 
           window.zoomToPeakStretch = () => {
             map.fitBounds(peakLine.getBounds().pad(0.35), { maxZoom: 18, animate: true });
@@ -991,7 +1025,7 @@
               <span>Highlighted Route Segments (${r.segments.length})</span>
               <i class="fa-solid fa-chevron-down chevron" id="seg-chevron"></i>
             </div>
-            <div class="accordion-body" id="seg-accordion-body" style="display:none;">
+            <div class="accordion-body" id="seg-accordion-body">
               ${r.segments.map(seg => {
                 const segScore = Math.round(seg.risk_score ?? seg.risk ?? 0);
                 const segLen = Math.round(seg.length_m ?? 0);
@@ -1026,9 +1060,8 @@
       const body = document.getElementById("seg-accordion-body");
       const chev = document.getElementById("seg-chevron");
       if (!body) return;
-      const isHidden = body.style.display === "none";
-      body.style.display = isHidden ? "flex" : "none";
-      if (chev) chev.style.transform = isHidden ? "rotate(180deg)" : "rotate(0deg)";
+      const open = body.classList.toggle("open");
+      if (chev) chev.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
     };
 
     /* =====================================================================
@@ -1191,8 +1224,8 @@
           `).join("") : '<div style="font-size:11.5px;color:#8b8b93;padding:6px 0;">No police station or 24/7 shop within range.</div>'}
         </div>
         <div class="row">
-          <button class="secondary" id="use-origin" type="button"><i class="fa-solid fa-circle-dot"></i> Use as origin</button>
-          <button class="secondary" id="use-dest" type="button"><i class="fa-solid fa-flag-checkered"></i> Use as dest</button>
+          <button class="secondary" id="use-origin" type="button"><i class="fa-solid fa-circle-dot" aria-hidden="true"></i><span>Use as origin</span></button>
+          <button class="secondary" id="use-dest" type="button"><i class="fa-solid fa-flag-checkered" aria-hidden="true"></i><span>Use as dest</span></button>
         </div>
       `;
 

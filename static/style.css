@@ -318,3 +318,43 @@ button {
   display: block !important;
   margin: 12px auto !important;
 }
+
+/* =========================================================================
+   AREA SAFETY INSPECTOR DRAWER -- bottom action buttons
+   The generic `.row button` rule above forces 64px-wide icon-only buttons.
+   These ID-scoped rules (higher specificity, also !important) override it for
+   the drawer so "Use as origin" / "Use as dest" sit side by side, with a gap
+   between the icon and its label.
+   ========================================================================= */
+#drawer .row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: 100% !important;
+  margin: 14px 0 0 !important;
+}
+#drawer .row button {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 38px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  font-size: 11.5px !important;
+  white-space: nowrap !important;
+}
+#drawer .row button i {
+  flex: 0 0 auto !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+#drawer .row button span {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
