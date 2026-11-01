@@ -72,17 +72,4 @@ cost(edge) = lam * normalized_distance + (1 - lam) * normalized_insecurity
 - `lam = 0.0` → pure safest path
 - Anything in between → blended trade-off
 
-Every design decision (why RandomForest, why KDTree, why Dijkstra over A*,
-why 100m buffers, etc.) is documented inline in the corresponding module's
-docstring/comments — these are written specifically to be quotable during
-a viva defense.
 
-## Honest limitation to state in your viva
-The `Insecurity_Score` labels are **synthetically bootstrapped** from an
-interpretable heuristic formula (grounded in CPTED / "eyes on the street"
-urban safety theory), not from real crime statistics — because licensed,
-street-segment-level crime data isn't available for an open student
-project. The pipeline is fully ready to swap in real labels (e.g. a police
-open-data feed) by replacing `model.synthesize_training_data()` with a
-function that joins real incident data onto `feature_df`; everything
-downstream (training, prediction, routing, visualization) is unaffected.
