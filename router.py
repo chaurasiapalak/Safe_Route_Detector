@@ -3,8 +3,7 @@ router.py
 ---------
 Risk-aware pedestrian routing on top of the zero-shot model in ml_engine.py.
 
-Edge weight (the formula you specified):
-
+Edge weight:
     weight(edge) = length * (1.0 + risk_lambda * calibrated_risk + penalty)
 
     calibrated_risk = risk_score / 100  (the 0-100 index of risk_calibration.py, bound to the trained
@@ -15,33 +14,16 @@ Edge weight (the formula you specified):
             = -0.10  if is_night == 1 and commercial_poi_count >= 4 and active_open_shops_estimate >= 1.0
                      (visible, active commercial street: natural-surveillance discount)
             =  0     otherwise
-    The two rules are mutually exclusive in practice (a segment that is dark / low-escape is rarely a busy
-    open-shop street); if both ever hold, the penalty and the discount are added.  Penalties apply only in
-    safety-aware mode (risk_lambda > 0) so the "Shortest" baseline (slider = 1.0) remains pure distance.
 
     predicted_risk in [0, 1]   (written on each edge by ml_engine.attach_risk_to_graph; predicted by
                                the OFFLINE-trained regressor, no per-area retraining)
     risk_lambda    >= 0        (0 = ignore risk, larger = detour more to avoid risk)
 
-Explainability in the output payload (additive; the /api/route schema is otherwise unchanged)
-    * high_risk_segments(...)  -> every returned segment carries `micro_explanation`
-          {"top_risk_factors": [...], "top_positive_factors": [...], "routing_adjustments": [...], "source": ...}
-    * path_risk_profile(...)   -> `peak_segment_risk` (0-100) and `peak_segment` (with its micro_explanation)
-    * route_summary(...)       -> one call returning the profile + explained high-risk segments
-
-Frontend compatibility (zero frontend changes)
-    The Leaflet slider still sends `lam` in [0, 1] with the OLD meaning:
-    lam = 1.0 -> "Shortest", lam = 0.0 -> "Safest". lam_to_risk_lambda() converts it:
-
-        risk_lambda = RISK_LAMBDA_MAX * (1 - lam)
-
-    so the public functions below keep their signatures and return values, and
-    /api/route keeps producing exactly the same JSON schema.
-
-A* is valid here
-    Because predicted_risk >= 0, risk_lambda >= 0 and the penalty is >= -0.10, every edge weight is
-    >= 0.90 x its physical length. The heuristic is therefore the haversine distance x 0.90 (see
-    HEURISTIC_SCALE), which never overestimates the remaining cost and stays consistent for ANY lambda.
+Explainability in the output payload:
+    * high_risk_segments(...)  -> returns segments with micro_explanation and true polyline coordinates
+    * path_risk_profile(...)   -> returns peak_segment_risk and peak_segment with street name, length,
+                                  coords, and micro_explanation
+    * route_summary(...)       -> aggregates the profile and explained high-risk segments for /api/route
 """
 
 import heapq
@@ -64,7 +46,7 @@ def lam_to_risk_lambda(lam: float) -> float:
 
 def normalize_graph_weights(G):
     """Kept for backward compatibility. The multiplicative cost needs no graph-wide
-    min/max normalisation, so this is a no-op that returns G unchanged."""
+    normalisation, so this returns G unchanged."""
     return G
 
 
@@ -83,10 +65,11 @@ CPTED_ENABLED = os.environ.get("SAFE_ROUTE_CPTED", "1") != "0"
 NIGHT_LOW_ESCAPE_PENALTY = 0.35      # night + degree_of_connectivity <= LOW_ESCAPE_DEGREE
 LOW_ESCAPE_DEGREE = 2
 SURVEILLANCE_DISCOUNT = -0.10        # night-time busy commercial street with open shops
-SURVEILLANCE_MIN_POIS = 4            # commercial_poi_count must be >= this ...
-SURVEILLANCE_MIN_OPEN = 1.0          # ... and active_open_shops_estimate must be >= this (and is_night == 1)
+SURVEILLANCE_MIN_POIS = 4            # commercial_poi_count must be >= this
+SURVEILLANCE_MIN_OPEN = 1.0          # active_open_shops_estimate must be >= this (and is_night == 1)
 MICRO_MAX_FACTORS = 3
-# Smallest possible cost multiplier -> keeps the A* heuristic admissible (see module docstring).
+
+# Smallest possible cost multiplier -> keeps the A* heuristic admissible.
 HEURISTIC_SCALE = 1.0 + (SURVEILLANCE_DISCOUNT if CPTED_ENABLED else 0.0)
 
 
@@ -95,14 +78,19 @@ def _num(data: dict, key: str):
     v = data.get(key)
     if v is None:
         return None
-    v = float(v)
-    return None if v != v else v
+    try:
+        v = float(v)
+        return None if v != v else v
+    except (ValueError, TypeError):
+        return None
 
 
 def structural_flags(data: dict) -> dict:
     """Which CPTED rules fire for one edge: {"dead_end_night": bool, "surveilled_night": bool}."""
-    night, degree = _num(data, "is_night"), _num(data, "degree_of_connectivity")
-    pois, open_shops = _num(data, "commercial_poi_count"), _num(data, "active_open_shops_estimate")
+    night = _num(data, "is_night")
+    degree = _num(data, "degree_of_connectivity")
+    pois = _num(data, "commercial_poi_count")
+    open_shops = _num(data, "active_open_shops_estimate")
     is_night = night is not None and int(round(night)) == 1
     return {
         "dead_end_night": bool(is_night and degree is not None and degree <= LOW_ESCAPE_DEGREE),
@@ -113,12 +101,9 @@ def structural_flags(data: dict) -> dict:
 
 def structural_penalty(data: dict) -> float:
     """
-    CPTED structural term added inside (1 + lambda * risk + penalty).  Reads the per-edge fields written
-    by ml_engine.attach_risk_to_graph; an edge without them (graph scored by an older engine) gets 0.
-
-        +0.35  night and degree_of_connectivity <= 2            (dead-end / low-escape entrapment)
-        -0.10  night and commercial_poi_count >= 4 and active_open_shops_estimate >= 1.0
-                                                                (naturally surveilled corridor)
+    CPTED structural term added inside (1 + lambda * risk + penalty).
+    +0.35  night and degree_of_connectivity <= 2  (dead-end / low-escape entrapment)
+    -0.10  night and commercial_poi_count >= 4 and active_open_shops_estimate >= 1.0 (surveilled corridor)
     """
     if not CPTED_ENABLED:
         return 0.0
@@ -131,8 +116,6 @@ def structural_penalty(data: dict) -> float:
     return penalty
 
 
-# The raw regressor output is tiny (p80 ~ 0.016), so multiplying it by risk_lambda barely changes routes.
-# By default the router therefore uses the calibrated 0-100 score / 100 (set to 0 to restore raw risk).
 COST_USES_CALIBRATED = os.environ.get("SAFE_ROUTE_COST_USES_CALIBRATED", "1") != "0"
 
 
@@ -148,7 +131,7 @@ def edge_weight(G, u, v, data: dict, risk_lambda: float) -> float:
     length = data.get("length")
     if length is None:
         length = _haversine_m(G.nodes[u]["y"], G.nodes[u]["x"], G.nodes[v]["y"], G.nodes[v]["x"])
-    penalty = structural_penalty(data) if risk_lambda > 0 else 0.0     # "Shortest" stays pure distance
+    penalty = structural_penalty(data) if risk_lambda > 0 else 0.0
     multiplier = max(HEURISTIC_SCALE, 1.0 + risk_lambda * edge_risk_unit(data) + penalty)
     return float(length) * multiplier
 
@@ -156,7 +139,10 @@ def edge_weight(G, u, v, data: dict, risk_lambda: float) -> float:
 def _best_parallel_edge(G, u, v, risk_lambda: float):
     """Cheapest of the parallel edges between u and v (MultiDiGraph) -> (weight, key)."""
     best_w, best_k = math.inf, None
-    for key, data in G.get_edge_data(u, v).items():
+    edge_dict = G.get_edge_data(u, v)
+    if not edge_dict:
+        return best_w, best_k
+    for key, data in edge_dict.items():
         w = edge_weight(G, u, v, data, risk_lambda)
         if w < best_w:
             best_w, best_k = w, key
@@ -166,14 +152,14 @@ def _best_parallel_edge(G, u, v, risk_lambda: float):
 def risk_weighted_route(G, source, target, risk_lambda: float, use_heuristic: bool = True):
     """
     A* (or plain Dijkstra when use_heuristic=False) with the risk-weighted cost.
-    Returns (path_nodes, total_cost, total_distance_m) like the previous router.
+    Returns (path_nodes, total_cost, total_distance_m).
     """
     if source not in G or target not in G:
         raise ValueError("Source or target node not in graph.")
     risk_lambda = max(0.0, float(risk_lambda))
     ty, tx = G.nodes[target]["y"], G.nodes[target]["x"]
 
-    h_scale = HEURISTIC_SCALE if risk_lambda > 0 else 1.0     # penalties/discounts are off when lambda == 0
+    h_scale = HEURISTIC_SCALE if risk_lambda > 0 else 1.0
 
     def h(n):
         if not use_heuristic:
@@ -195,6 +181,8 @@ def risk_weighted_route(G, source, target, risk_lambda: float, use_heuristic: bo
             if v in closed:
                 continue
             w, _ = _best_parallel_edge(G, u, v, risk_lambda)
+            if math.isinf(w):
+                continue
             g_v = g_u + w
             if g_v < g_cost.get(v, math.inf):
                 g_cost[v] = g_v
@@ -213,8 +201,9 @@ def risk_weighted_route(G, source, target, risk_lambda: float, use_heuristic: bo
     for a, b in zip(path[:-1], path[1:]):
         _, key = _best_parallel_edge(G, a, b, risk_lambda)
         d = G.edges[a, b, key]
-        distance += d.get("length") if d.get("length") is not None else _haversine_m(
-            G.nodes[a]["y"], G.nodes[a]["x"], G.nodes[b]["y"], G.nodes[b]["x"])
+        distance += float(d.get("length")) if d.get("length") is not None else _haversine_m(
+            G.nodes[a]["y"], G.nodes[a]["x"], G.nodes[b]["y"], G.nodes[b]["x"]
+        )
     return path, g_cost[target], distance
 
 
@@ -224,15 +213,12 @@ def compute_shortest_path(G, source, target):
 
 
 def compute_safest_path(G, source, target, lam: float = 0.0):
-    """
-    Safety-weighted route. `lam` keeps the frontend meaning (1 = shortest,
-    0 = safest); it is converted to risk_lambda internally.
-    """
+    """Safety-weighted route with slider lam mapped to risk multiplier."""
     return risk_weighted_route(G, source, target, risk_lambda=lam_to_risk_lambda(lam))
 
 
 def path_edge_keys(G, path, risk_lambda: float = 0.0) -> list:
-    """[(u, v, key), ...] for each hop of `path` (the cheapest parallel edge, as the router picks it)."""
+    """[(u, v, key), ...] for each hop of path."""
     out = []
     for a, b in zip(path[:-1], path[1:]):
         _, key = _best_parallel_edge(G, a, b, risk_lambda)
@@ -241,55 +227,97 @@ def path_edge_keys(G, path, risk_lambda: float = 0.0) -> list:
 
 
 def _edge_score(d: dict) -> float:
-    """Calibrated 0-100 score of one edge (falls back to 100 x raw risk for graphs scored the old way)."""
+    """Calibrated 0-100 score of one edge."""
     if d.get("risk_score") is not None:
         return float(d["risk_score"])
     return 100.0 * float(d.get("predicted_risk", 0.0))
 
 
+def _edge_street_name(d: dict) -> str:
+    """Extract legible street or pathway name from OSM edge attributes."""
+    name = d.get("name")
+    if isinstance(name, list) and name:
+        return str(name[0])
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    hw = d.get("highway")
+    if isinstance(hw, list) and hw:
+        hw = hw[0]
+    if hw in ("footway", "path", "pedestrian"):
+        return "Pedestrian Walkway / Path"
+    if hw in ("service", "alley"):
+        return "Service Lane / Alley"
+    return "Local Road"
+
+
+def _edge_latlon(G, u, v, data: dict):
+    """[[lat, lon], ...] along the actual geometry coordinates of the edge."""
+    geom = data.get("geometry")
+    if geom is not None and hasattr(geom, "xy"):
+        xs, ys = geom.xy
+        return [[round(float(y), 6), round(float(x), 6)] for x, y in zip(xs, ys)]
+    return [
+        [round(float(G.nodes[u]["y"]), 6), round(float(G.nodes[u]["x"]), 6)],
+        [round(float(G.nodes[v]["y"]), 6), round(float(G.nodes[v]["x"]), 6)],
+    ]
+
+
 def structural_micro_explanation(d: dict) -> dict:
-    """
-    Model-free micro-explanation built only from the edge attributes stored on the graph (always available,
-    no extra predictions).  Used when no model-based `explain_fn` is supplied.
-    """
+    """Model-free micro-explanation built from edge attributes stored on the graph."""
     risk, positive = [], []
     flags = structural_flags(d)
     night = _num(d, "is_night") is not None and int(round(_num(d, "is_night"))) == 1
-    deg, pois, open_shops = _num(d, "degree_of_connectivity"), _num(d, "commercial_poi_count"), _num(d, "active_open_shops_estimate")
-    iso, dark = _num(d, "isolation_index"), _num(d, "darkness_hazard")
+    deg = _num(d, "degree_of_connectivity")
+    pois = _num(d, "commercial_poi_count")
+    open_shops = _num(d, "active_open_shops_estimate")
+    iso = _num(d, "isolation_index")
+    dark = _num(d, "darkness_hazard")
+    dist_pol = _num(d, "dist_to_police") or _num(d, "dist_to_police_m")
     level = d.get("risk_level")
-    if level in ("elevated", "high"):
-        risk.append({"factor": "model_rating", "text": f"model rates this segment {level} risk ({_edge_score(d):.0f}/100)"})
+
+    if dist_pol is not None and dist_pol > 1400:
+        risk.append({"factor": "police_distance", "text": f"far from nearest police station (~{dist_pol/1000:.1f} km away)"})
+
     if flags["dead_end_night"] and deg is not None:
-        risk.append({"factor": "dead_end_at_night",
-                     "text": f"low-connectivity lane at night ({deg:.0f} link{'s' if deg != 1 else ''}): few escape routes"})
-    if dark is not None and dark >= 0.9:
-        risk.append({"factor": "darkness_hazard", "text": "dark stretch at night: no open shops for light or witnesses"})
+        risk.append({
+            "factor": "dead_end_at_night",
+            "text": f"low-connectivity lane at night ({deg:.0f} link{'s' if deg != 1 else ''}): few escape routes",
+        })
+
+    if dark is not None and dark >= 0.85:
+        risk.append({"factor": "darkness_hazard", "text": "dark stretch at night: no open commercial frontage for light or witnesses"})
+    elif pois == 0 or (open_shops is not None and open_shops == 0):
+        risk.append({"factor": "no_eyes_on_street", "text": "zero active storefronts nearby: low natural surveillance"})
+
     if iso is not None and iso >= 1.0:
-        risk.append({"factor": "isolation_index", "text": f"isolated: far from police response and poorly connected (index {iso:.1f})"})
+        risk.append({"factor": "isolation_index", "text": f"isolated: far from emergency response with limited exit corridors (index {iso:.1f})"})
+
+    if level in ("elevated", "high") and not risk:
+        risk.append({"factor": "model_rating", "text": f"model identifies elevated street hazard ({_edge_score(d):.0f}/100)"})
+
+    # Positive protective factors
     if flags["surveilled_night"] and pois is not None and open_shops is not None:
-        positive.append({"factor": "natural_surveillance",
-                         "text": f"active commercial frontage at night ({pois:.0f} shops, ~{open_shops:.0f} open): eyes on the street"})
+        positive.append({
+            "factor": "natural_surveillance",
+            "text": f"active commercial frontage at night ({pois:.0f} shops, ~{open_shops:.0f} open): eyes on the street",
+        })
     elif night and open_shops is not None and open_shops >= SURVEILLANCE_MIN_OPEN:
-        positive.append({"factor": "open_shops", "text": f"~{open_shops:.0f} open shops nearby give some light and witnesses"})
+        positive.append({"factor": "open_shops", "text": f"~{open_shops:.0f} open shops nearby provide light and witnesses"})
+
     if deg is not None and deg >= 4:
-        positive.append({"factor": "connectivity", "text": f"well-connected junction area ({deg:.0f} streets): several escape routes"})
-    if level == "low":
+        positive.append({"factor": "connectivity", "text": f"well-connected junction area ({deg:.0f} intersecting streets): open escape paths"})
+
+    if dist_pol is not None and dist_pol < 500:
+        positive.append({"factor": "police_proximity", "text": f"close to police station (~{dist_pol:.0f} m)"})
+
+    if level == "low" and not positive:
         positive.append({"factor": "model_rating", "text": f"model rates this segment low risk ({_edge_score(d):.0f}/100)"})
+
     return {"top_risk_factors": risk[:MICRO_MAX_FACTORS], "top_positive_factors": positive[:MICRO_MAX_FACTORS]}
 
 
 def edge_micro_explanation(d: dict, detail: Optional[dict] = None) -> dict:
-    """
-    Edge-level micro-explanation for the API payload:
-
-        top_risk_factors      what pushes this edge's risk UP   (model counterfactuals when `detail` is given)
-        top_positive_factors  what pulls this edge's risk DOWN  (model counterfactuals when `detail` is given)
-        routing_adjustments   CPTED cost terms applied by edge_weight (e.g. {"rule": "dead_end_night", "cost": +0.35})
-        source                "model" (from ml_engine.explain_edges) or "structural" (graph attributes only)
-
-    `detail` is one value of ml_engine.explain_edges(): {"drivers": [...], "protective": [...], ...}.
-    """
+    """Edge-level micro-explanation with applied routing adjustments."""
     adjustments = []
     flags = structural_flags(d) if CPTED_ENABLED else {"dead_end_night": False, "surveilled_night": False}
     if flags["dead_end_night"]:
@@ -298,11 +326,13 @@ def edge_micro_explanation(d: dict, detail: Optional[dict] = None) -> dict:
         adjustments.append({"rule": "active_commercial_night", "cost": SURVEILLANCE_DISCOUNT})
 
     if detail and (detail.get("drivers") or detail.get("protective")):
-        out = {"top_risk_factors": [{"factor": x["factor"], "text": x["text"], "points": x.get("points")}
-                                    for x in detail.get("drivers", [])[:MICRO_MAX_FACTORS]],
-               "top_positive_factors": [{"factor": x["factor"], "text": x["text"], "points": x.get("points")}
-                                        for x in detail.get("protective", [])[:MICRO_MAX_FACTORS]],
-               "source": "model"}
+        out = {
+            "top_risk_factors": [{"factor": x["factor"], "text": x["text"], "points": x.get("points")}
+                                 for x in detail.get("drivers", [])[:MICRO_MAX_FACTORS]],
+            "top_positive_factors": [{"factor": x["factor"], "text": x["text"], "points": x.get("points")}
+                                     for x in detail.get("protective", [])[:MICRO_MAX_FACTORS]],
+            "source": "model",
+        }
     else:
         out = dict(structural_micro_explanation(d), source="structural")
     out["routing_adjustments"] = adjustments
@@ -311,16 +341,7 @@ def edge_micro_explanation(d: dict, detail: Optional[dict] = None) -> dict:
 
 def path_risk_profile(G, path, explain_fn: Optional[Callable[[list], dict]] = None) -> dict:
     """
-    Route-level risk metrics on the calibrated 0-100 scale.
-
-        avg_risk              length-weighted mean of the edge scores
-        peak_segment_risk     highest single-edge score on the path (the danger bottleneck)
-        peak_segment          {edge, length_m, risk_score, risk_level, coords, micro_explanation} of that edge
-        pct_elevated_length   % of the route length in 'elevated' or 'high' edges
-        pct_high_length       % of the route length in 'high' edges
-
-    `explain_fn` (optional, e.g. ml_engine.make_explain_fn(static_df, hour)) upgrades the peak segment's
-    micro-explanation from graph attributes ("structural") to model counterfactuals ("model").
+    Route-level risk metrics with detailed peak hazard bottleneck metadata.
     """
     keys = path_edge_keys(G, path)
     total = weighted = elev_len = high_len = 0.0
@@ -338,64 +359,72 @@ def path_risk_profile(G, path, explain_fn: Optional[Callable[[list], dict]] = No
             high_len += length
         if peak is None or score > peak[0]:
             peak = (score, k, d, length)
+
     if peak is None:
-        return {"avg_risk": 0.0, "peak_segment_risk": 0.0, "peak_segment": None,
-                "pct_elevated_length": 0.0, "pct_high_length": 0.0}
+        return {
+            "avg_risk": 0.0,
+            "peak_segment_risk": 0.0,
+            "peak_segment": None,
+            "pct_elevated_length": 0.0,
+            "pct_high_length": 0.0,
+        }
+
     score, k, d, length = peak
     detail = None
     if explain_fn is not None:
         try:
             detail = (explain_fn([tuple(k)]) or {}).get(tuple(k))
-        except Exception:      # an explanation failure must never break routing
+        except Exception:
             detail = None
+
+    coords = _edge_latlon(G, k[0], k[1], d)
+    street_name = _edge_street_name(d)
+    micro = edge_micro_explanation(d, detail)
+
+    peak_segment_dict = {
+        "edge": list(k),
+        "street_name": street_name,
+        "length_m": round(length, 1),
+        "risk_score": round(score, 1),
+        "risk_level": d.get("risk_level") or ("high" if score >= 80 else "elevated" if score >= 50 else "low"),
+        "coords": coords,
+        "geojson": {
+            "type": "LineString",
+            "coordinates": [[pt[1], pt[0]] for pt in coords],
+        },
+        "micro_explanation": micro,
+    }
+
     return {
         "avg_risk": round(weighted / total, 1) if total else 0.0,
         "peak_segment_risk": round(score, 1),
-        "peak_segment": {"edge": list(k), "length_m": round(length, 1), "risk_score": round(score, 1),
-                         "risk_level": d.get("risk_level"), "coords": _edge_latlon(G, k[0], k[1], d),
-                         "micro_explanation": edge_micro_explanation(d, detail)},
+        "peak_segment": peak_segment_dict,
         "pct_elevated_length": round(100.0 * elev_len / total, 1) if total else 0.0,
         "pct_high_length": round(100.0 * high_len / total, 1) if total else 0.0,
     }
 
 
 def path_average_insecurity(G, path):
-    """Length-weighted mean calibrated risk (0-100). Kept for backward compatibility."""
+    """Length-weighted mean calibrated risk (0-100)."""
     return path_risk_profile(G, path)["avg_risk"]
-
-
-def _edge_latlon(G, u, v, data: dict):
-    """[[lat, lon], ...] along the true shape of ONE specific edge (not just the first parallel edge)."""
-    geom = data.get("geometry")
-    if geom is not None:
-        xs, ys = geom.xy
-        return [[float(y), float(x)] for x, y in zip(xs, ys)]
-    return [[float(G.nodes[u]["y"]), float(G.nodes[u]["x"])], [float(G.nodes[v]["y"]), float(G.nodes[v]["x"])]]
 
 
 def high_risk_segments(G, path, min_level: str = "elevated", max_segments: int = 25,
                        risk_lambda: float = 0.0,
                        explain_fn: Optional[Callable[[list], dict]] = None):
     """
-    Interpretable report of the risky edges ON a route (what the frontend can highlight).
-
-    G           graph already scored by ml_engine.attach_risk_to_graph
-    min_level   "high" -> only high-risk edges; "elevated" -> elevated and high
-    explain_fn  e.g. ml_engine.make_explain_fn(static_df, hour): takes a list of (u, v, key) and
-                returns {(u, v, key): {"reason": str, "drivers": [...], "archetype": str}}.
-                It is only called for the (at most `max_segments`) edges returned, so explaining
-                costs a handful of predictions, not one per graph edge.
-
-    Returns a list in path order: edge, order, length_m, predicted_risk, risk_score, risk_level, archetype,
-    reason, drivers, protective, micro_explanation, coords ([[lat, lon], ...]).
+    Returns high-risk and elevated segments in route traversal order.
     """
     allowed = {"high"} if min_level == "high" else {"high", "elevated"}
     found = []
     for order, (a, b) in enumerate(zip(path[:-1], path[1:])):
         _, key = _best_parallel_edge(G, a, b, risk_lambda)
         d = G.edges[a, b, key]
-        if d.get("risk_level") in allowed:
+        score = _edge_score(d)
+        level = d.get("risk_level") or ("high" if score >= 80 else "elevated" if score >= 50 else "low")
+        if level in allowed:
             found.append((order, a, b, key, d))
+
     found.sort(key=lambda t: -_edge_score(t[4]))
     found = sorted(found[:max_segments], key=lambda t: t[0])
 
@@ -403,26 +432,37 @@ def high_risk_segments(G, path, min_level: str = "elevated", max_segments: int =
     if explain_fn is not None and found:
         try:
             details = explain_fn([(a, b, k) for _, a, b, k, _ in found]) or {}
-        except Exception:  # an explanation failure must never break routing
+        except Exception:
             details = {}
 
     out = []
     for order, a, b, key, d in found:
         det = details.get((a, b, key), {})
+        coords = _edge_latlon(G, a, b, d)
+        micro = edge_micro_explanation(d, det)
+        top_risk = micro.get("top_risk_factors", [])
+        driver_text = top_risk[0]["text"] if top_risk else ""
+
         out.append({
             "edge": [a, b, key],
             "order": order,
+            "street_name": _edge_street_name(d),
             "length_m": round(float(d.get("length") or 0.0), 1),
             "predicted_risk": round(float(d.get("predicted_risk", 0.0)), 4),
             "risk_score": round(_edge_score(d), 1),
             "risk_level": d.get("risk_level"),
             "archetype": det.get("archetype") or d.get("risk_archetype", ""),
-            "reason": det.get("reason") or d.get("risk_reason") or
-                      f"{str(d.get('risk_level', '')).capitalize()} predicted risk ({float(d.get('predicted_risk', 0.0)):.2f}).",
+            "reason": det.get("reason") or d.get("risk_reason") or driver_text or (
+                f"{str(d.get('risk_level', 'elevated')).capitalize()} hazard score ({_edge_score(d):.0f}/100)."
+            ),
             "drivers": det.get("drivers", []),
             "protective": det.get("protective", []),
-            "micro_explanation": edge_micro_explanation(d, det),
-            "coords": _edge_latlon(G, a, b, d),
+            "micro_explanation": micro,
+            "coords": coords,
+            "geojson": {
+                "type": "LineString",
+                "coordinates": [[pt[1], pt[0]] for pt in coords],
+            },
         })
     return out
 
@@ -430,11 +470,12 @@ def high_risk_segments(G, path, min_level: str = "elevated", max_segments: int =
 def route_summary(G, path, risk_lambda: float = 0.0, explain_fn: Optional[Callable[[list], dict]] = None,
                   min_level: str = "elevated", max_segments: int = 25) -> dict:
     """
-    One-call explainable payload for a route: the risk profile (avg / PEAK segment risk, % elevated length) plus
-    the explained high-risk segments.  Every segment and the peak segment carry a `micro_explanation` with the
-    top risk factors and top positive factors.  Intended for the /api/route handler.
+    One-call explainable payload for a route. Aggregates the risk profile,
+    the peak hazard bottleneck stretch, and all explained high-risk segments.
     """
     out = path_risk_profile(G, path, explain_fn=explain_fn)
-    out["high_risk_segments"] = high_risk_segments(G, path, min_level=min_level, max_segments=max_segments,
-                                                   risk_lambda=risk_lambda, explain_fn=explain_fn)
+    out["high_risk_segments"] = high_risk_segments(
+        G, path, min_level=min_level, max_segments=max_segments,
+        risk_lambda=risk_lambda, explain_fn=explain_fn
+    )
     return out

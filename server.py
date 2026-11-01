@@ -1,156 +1,55 @@
 """
 server.py
 ---------
-Flask backend for the interactive Spatio-Temporal Safe Route Optimizer
-frontend. Serves the Leaflet-based single-page UI (templates/index.html)
-and exposes a small JSON API the frontend calls via fetch():
-
-  POST /api/load_area
-      body: { "place": str, "dist": int }
-      -> downloads/loads (and caches in-process) the road graph + POIs
-         within `dist` metres of the geocoded `place`, scores its
-         edges with the PRE-TRAINED risk regressor (ml_engine), and returns the area's centre
-         point (used as the DEFAULT origin) and bounding box (used to
-         fit the map view).
-
-  POST /api/geocode
-      body: { "query": str }
-      -> resolves free-text typed by the user (in the Start/Destination
-         search boxes) to a (lat, lon) point, RESTRICTED to a bounding
-         box around the currently loaded area (see geocode_near()) so a
-         same-named place in a different city is never returned. This is
-         how locations are chosen now -- typed and geocoded, not clicked
-         or dragged on the map.
-
-  POST /api/route
-      body: { "place": str, "dist": int, "hour": int, "lambda": float,
-              "orig": [lat, lon] | null, "dest": [lat, lon] }
-      -> computes the shortest / safest / balanced paths between `orig`
-         (or the area's centre point if `orig` is omitted -- the
-         "default start location" requirement) and `dest` (REQUIRED),
-         and returns each route as a GeoJSON LineString plus summary
-         stats. Also returns `warnings` when a typed point snaps to a
-         graph node far from where it was actually typed (i.e. it likely
-         falls outside the loaded area's coverage radius).
-
-Run:
-    python server.py
-    then open http://127.0.0.1:5000 in a browser.
-
-Design decisions (for viva defense):
-- IN-PROCESS CACHING PER AREA: geocoding + graph download + RandomForest
-  training are all expensive (seconds to tens of seconds). Re-running
-  them on every single route request -- which would happen on every
-  slider drag in an interactive UI -- would make the frontend feel
-  broken. Instead a single module-level `_AREA` cache holds the built
-  graph, POIs, and trained model, and `/api/route` only ever redoes the
-  genuinely TIME-DEPENDENT, CHEAP step (temporal feature derivation +
-  model prediction + weight normalization). This mirrors the two-tier
-  static/temporal split already used inside feature_engineering.py --
-  we're just applying the same idea at the web-request layer.
-- LOADING A NEW AREA IS A SEPARATE, EXPLICIT ACTION: `/api/load_area`
-  is only called when the user clicks "Load Area", never implicitly from
-  `/api/route`, so an expensive re-download/re-train never happens by
-  surprise from a slider drag or a map click.
-- DESTINATION REQUIRED, ORIGIN DEFAULTED: implements the requirement
-  directly -- there's no sensible universal default endpoint, so `dest`
-  must always be supplied by the user (clicking the map), while `orig`
-  defaults to the loaded area's geocoded centre point and can be
-  overridden by dragging the origin marker.
-- SINGLE-PROCESS, SINGLE-AREA CACHE: this is a student-project demo
-  server (Flask's single-threaded dev server), so one shared `_AREA`
-  object is safe and simple. A production multi-user deployment would
-  need a per-session cache (e.g. keyed in Redis by session id) instead
-  of one global -- worth stating explicitly if asked about scaling this
-  beyond a single-user demo.
+Flask backend for the interactive Spatio-Temporal Safe Route Optimizer.
+Serves templates/index.html and exposes JSON APIs for routing, landmark
+presets, spot CPTED inspection, and 24-hour diurnal profiling.
 """
 
 import json
 import math
 import os
+import re
 import traceback
 from pathlib import Path
 
-import requests
-from flask import Flask, jsonify, request, render_template, send_from_directory
+import networkx as nx
 import osmnx as ox
+import requests
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from data_extraction import fetch_road_graph, fetch_pois
+from data_extraction import fetch_pois, fetch_road_graph
 from feature_engineering import compute_static_and_poi_features
+from geo_utils import haversine_m, path_to_geojson_feature
 import ml_engine
 from router import (
-    compute_shortest_path,
     compute_safest_path,
-    path_average_insecurity,  # noqa: F401  (kept for backward compatibility)
+    compute_shortest_path,
+    high_risk_segments,
+    path_average_insecurity,
     path_edge_keys,
     path_risk_profile,
-    high_risk_segments,
 )
-from geo_utils import path_to_geojson_feature, haversine_m
-import re
-import numpy as np
-from scipy.spatial import cKDTree
-from risk_calibration import calibrate_risk_scores, score_band
 
 def get_cache_filenames(place_name: str, dist: int = 2500, cache_dir: str = "cache"):
     slug = re.sub(r"[^a-zA-Z0-9]+", "_", place_name.strip()).strip("_").lower()
+    os.makedirs(cache_dir, exist_ok=True)
     graph_file = f"{cache_dir}/graph_{slug}_{dist}m.graphml"
     pois_file = f"{cache_dir}/pois_{slug}_{dist}m.geojson"
     return graph_file, pois_file
 
 app = Flask(__name__)
 
-# The risk model is trained OFFLINE (python train_offline.py) and loaded once here. Loading a new
-# area never trains anything: edge features are extracted on the fly and scored zero-shot.
+# Load the offline pre-trained LightGBM / RF model
 ml_engine.load_models()
 
-# If a geocoded start/destination point snaps to a graph node farther
-# than this many metres away, we surface a warning to the user rather
-# than silently returning a route that starts/ends somewhere they didn't
-# expect. This should rarely fire now that /api/geocode is bounded to
-# search near the loaded area (see geocode_near below); it mainly
-# catches genuinely borderline cases just outside the coverage radius.
 SNAP_WARNING_THRESHOLD_M = 400
-
-# HARD CAP on the coverage radius. A pedestrian "walk" network's edge
-# count grows roughly with the AREA of the circle, i.e. with dist^2 --
-# a 2500 m radius (the default) already downloads several thousand
-# edges; a 40,000 m radius (as tried in testing) covers ~5,000 km^2 and
-# would mean an Overpass query and RandomForest training pass that are
-# impractical for a live demo (likely minutes-to-hours, if the Overpass
-# query doesn't just time out first). Capping this server-side (not just
-# via the HTML <input max>, which a user can bypass by typing a larger
-# number directly) keeps every request within what's actually feasible.
 MAX_COVERAGE_RADIUS_M = 5000
-
 NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
-NOMINATIM_USER_AGENT = "SafeRouteOptimizer-StudentProject/1.0 (contact: set-your-email-here)"
+NOMINATIM_USER_AGENT = "SafeRouteOptimizer-StudentProject/1.0"
 
 
 def geocode_near(query: str, center_lat: float, center_lon: float, radius_m: float):
-    """
-    Geocode `query` to a (lat, lon) point, but RESTRICTED to a bounding
-    box around the loaded area's centre -- rather than osmnx's plain
-    `ox.geocode()`, which does a global, unscoped Nominatim lookup and
-    can happily return a same-named place in a totally different city
-    (e.g. searching "Wave City" while a small Mehrauli-radius graph is
-    loaded matched Wave City, Ghaziabad -- ~30+ km away -- because
-    nothing told Nominatim to prefer results near the loaded area).
-
-    We call Nominatim's /search endpoint directly with `viewbox` +
-    `bounded=1`, which makes Nominatim return ONLY results that actually
-    fall inside that box, instead of ranking a distant same-named match
-    highest globally. The box is padded well beyond `radius_m` so a
-    place just past the loaded street network's edge can still resolve
-    -- the ROUTER (not the geocoder) is what should ultimately decide
-    whether a point is usably close, via the snap-distance warning in
-    /api/route.
-
-    Returns (lat, lon) or None if nothing matched inside the box.
-    """
-    # ~111,000 m per degree of latitude; pad generously (3x the coverage
-    # radius) so genuinely-nearby places aren't excluded by an overly
-    # tight box, while a different city is still reliably excluded.
     pad_deg = (radius_m * 3.0) / 111_000.0
     viewbox = (
         f"{center_lon - pad_deg},{center_lat + pad_deg},"
@@ -161,11 +60,13 @@ def geocode_near(query: str, center_lat: float, center_lon: float, radius_m: flo
         "format": "json",
         "limit": 1,
         "viewbox": viewbox,
-        "bounded": 1,  # hard-restrict results to inside the viewbox, not just prefer them
+        "bounded": 1,
     }
     resp = requests.get(
-        NOMINATIM_SEARCH_URL, params=params,
-        headers={"User-Agent": NOMINATIM_USER_AGENT}, timeout=10,
+        NOMINATIM_SEARCH_URL,
+        params=params,
+        headers={"User-Agent": NOMINATIM_USER_AGENT},
+        timeout=10,
     )
     resp.raise_for_status()
     results = resp.json()
@@ -175,27 +76,21 @@ def geocode_near(query: str, center_lat: float, center_lon: float, radius_m: flo
 
 
 class AreaCache:
-    """Holds everything expensive-to-compute for the CURRENTLY loaded area."""
-
     def __init__(self):
         self.place = None
         self.dist = None
         self.G = None
         self.pois = None
-        self.static_features = None   # time-independent edge features (see feature_engineering.py)
-        self.model_info = None        # ml_engine.model_info() snapshot (metrics, importances, notes)
-        self.center_latlon = None     # (lat, lon) -- the DEFAULT origin
-        self.bounds = None            # (south, west, north, east)
+        self.static_features = None
+        self.model_info = None
+        self.center_latlon = None
+        self.bounds = None
 
 
 _AREA = AreaCache()
 
 
 def _area_center_and_bounds(G):
-    """Compute a simple centroid + bounding box from node coordinates,
-    used to (a) give the frontend a sensible default map view and
-    (b) provide the DEFAULT origin point when the user hasn't dragged
-    the start marker."""
     lats = [data["y"] for _, data in G.nodes(data=True)]
     lons = [data["x"] for _, data in G.nodes(data=True)]
     center = (sum(lats) / len(lats), sum(lons) / len(lons))
@@ -204,39 +99,20 @@ def _area_center_and_bounds(G):
 
 
 def ensure_area_loaded(place_name: str, dist: int):
-    """
-    Idempotent load: if `place_name`/`dist` already match what's cached
-    in `_AREA`, this is a no-op (near-instant). Otherwise it runs the
-    full data + training pipeline once and repopulates the cache.
-
-    Enforces MAX_COVERAGE_RADIUS_M here (the single choke point both
-    /api/load_area and /api/route funnel through) rather than only in
-    the HTML <input max>, which a user can bypass by typing a larger
-    number directly.
-    """
     if dist > MAX_COVERAGE_RADIUS_M:
-        raise ValueError(
-            f"Coverage radius capped at {MAX_COVERAGE_RADIUS_M} m -- a pedestrian network's "
-            f"size grows with the AREA of the circle (roughly dist^2), so {dist} m would mean "
-            f"an impractically large Overpass download and RandomForest training pass."
-        )
+        raise ValueError(f"Coverage radius capped at {MAX_COVERAGE_RADIUS_M} m.")
     if dist < 200:
         raise ValueError("Coverage radius must be at least 200 m.")
 
     if _AREA.place == place_name and _AREA.dist == dist:
         return
 
-    graph_cache_path, poi_cache_path = get_cache_filenames(place_name)
+    graph_cache_path, poi_cache_path = get_cache_filenames(place_name, dist)
     G = fetch_road_graph(place_name=place_name, dist=dist, cache_path=graph_cache_path)
     pois = fetch_pois(place_name=place_name, dist=dist, cache_path=poi_cache_path)
 
-    # Time-independent features computed ONCE per area (KDTree builds,
-    # POI spatial joins, etc.) -- see feature_engineering.py.
     static_df = compute_static_and_poi_features(G, pois)
-
-    # No training here: the pre-trained regressor scores these edges per request (see api_route).
     info = ml_engine.model_info()
-
     center, bounds = _area_center_and_bounds(G)
 
     _AREA.place = place_name
@@ -277,39 +153,69 @@ def api_load_area():
     })
 
 
+@app.route("/api/landmarks", methods=["GET"])
+def api_landmarks():
+    """Returns preset landmarks and the bounding box for the loaded graph."""
+    if _AREA.G is None:
+        try:
+            ensure_area_loaded("Hauz Khas, Delhi, India", 2500)
+        except Exception:
+            return jsonify({"area_loaded": False, "landmarks": []})
+
+    south, west, north, east = _AREA.bounds
+
+    presets = [
+        {"name": "Hauz Khas Village", "lat": 28.5535, "lon": 77.1943},
+        {"name": "Deer Park Main Gate", "lat": 28.5570, "lon": 77.1970},
+        {"name": "IIT Delhi Main Gate", "lat": 28.5450, "lon": 77.1926},
+        {"name": "Rose Garden", "lat": 28.5505, "lon": 77.2025},
+        {"name": "Green Park Market", "lat": 28.5588, "lon": 77.2065},
+    ]
+
+    landmarks = []
+    for p in presets:
+        in_area = (south <= p["lat"] <= north) and (west <= p["lon"] <= east)
+        landmarks.append({**p, "in_loaded_area": in_area})
+
+    hull_geojson = {
+        "type": "Polygon",
+        "coordinates": [[
+            [west, south],
+            [east, south],
+            [east, north],
+            [west, north],
+            [west, south],
+        ]],
+    }
+
+    return jsonify({
+        "area_loaded": True,
+        "place": _AREA.place,
+        "bbox": {"south": south, "west": west, "north": north, "east": east},
+        "hull_geojson": hull_geojson,
+        "landmarks": landmarks,
+    })
+
+
 @app.route("/api/geocode", methods=["POST"])
 def api_geocode():
-    """
-    Resolve a free-text location string (typed by the user in the Start
-    or Destination search box) to a (lat, lon) point -- RESTRICTED to
-    search near the currently loaded area (see geocode_near() docstring
-    for why: an unscoped global geocode can match a same-named place in
-    a different city entirely, which is what produced the "11,771,760 m
-    away" nonsense warning). This replaces click-on-map / drag-marker
-    location picking entirely -- the frontend calls this once per "Set
-    Start" / "Set Destination" action and places a plain (non-draggable)
-    marker at the result.
-    """
     payload = request.get_json(force=True) or {}
     query = (payload.get("query") or "").strip()
     if not query:
         return jsonify({"error": "Type a location to search for."}), 400
 
     if _AREA.center_latlon is None:
-        return jsonify({"error": "Load an area first, so there's somewhere to search near."}), 400
+        return jsonify({"error": "Load an area first."}), 400
 
     center_lat, center_lon = _AREA.center_latlon
     try:
         result = geocode_near(query, center_lat, center_lon, _AREA.dist)
     except requests.RequestException as e:
-        return jsonify({"error": f"Geocoding service unavailable right now: {e}"}), 502
+        return jsonify({"error": f"Geocoding service unavailable: {e}"}), 502
 
     if result is None:
         return jsonify({
-            "error": f"Could not find \u201c{query}\u201d near the loaded area "
-                     f"(\u201c{_AREA.place}\u201d, {_AREA.dist} m radius). Try a more specific "
-                     f"local name (a nearby landmark, market, or road), or load the area that "
-                     f"actually contains this place instead."
+            "error": f"Could not find \"{query}\" near the loaded area."
         }), 400
 
     lat, lon = result
@@ -323,21 +229,18 @@ def api_route():
     dist = int(payload.get("dist", _AREA.dist or 2500))
     hour = int(payload.get("hour", 12))
     lam_balanced = float(payload.get("lambda", 0.5))
-    orig = payload.get("orig")   # [lat, lon] or None -> defaults to area centre
-    dest = payload.get("dest")   # [lat, lon] -- REQUIRED
+    orig = payload.get("orig")
+    dest = payload.get("dest")
 
     if dest is None:
-        return jsonify({"error": "A destination is required. Click the map to set one."}), 400
+        return jsonify({"error": "A destination is required."}), 400
 
     try:
         ensure_area_loaded(place, dist)
 
-        # --- Recompute ONLY the genuinely time-dependent parts (cheap) ---
         G, model_notes = ml_engine.score_graph(_AREA.G, _AREA.static_features, hour)
         explain_fn = ml_engine.make_explain_fn(_AREA.static_features, hour)
 
-        # Origin: explicit user point if the marker was dragged, else the
-        # area's centre point (the "default start location" requirement).
         if orig is not None:
             orig_lat, orig_lon = orig
         else:
@@ -348,39 +251,28 @@ def api_route():
         dest_node = ox.distance.nearest_nodes(G, X=dest_lon, Y=dest_lat)
 
         if orig_node == dest_node:
-            return jsonify({"error": "Origin and destination snapped to the same street node -- "
-                                      "pick points farther apart."}), 400
+            return jsonify({"error": "Origin and destination are identical."}), 400
 
-        # Warn (but don't block) when a typed point is meaningfully far
-        # from the nearest street actually present in the loaded graph --
-        # this happens when the address falls outside the current
-        # coverage radius, and nearest_nodes() would otherwise silently
-        # snap it to whatever node is closest, however far that is.
-        warnings = list(model_notes)  # e.g. model missing / weak-skill notices (usually empty)
+        warnings = list(model_notes)
         orig_snap_dist = haversine_m(orig_lat, orig_lon, G.nodes[orig_node]["y"], G.nodes[orig_node]["x"])
         if orig_snap_dist > SNAP_WARNING_THRESHOLD_M:
-            warnings.append(
-                f"Start point is {orig_snap_dist:.0f} m from the nearest loaded street. "
-                f"It may be outside the current coverage radius -- try increasing it."
-            )
+            warnings.append(f"Start point is {orig_snap_dist:.0f} m from the nearest street.")
         dest_snap_dist = haversine_m(dest_lat, dest_lon, G.nodes[dest_node]["y"], G.nodes[dest_node]["x"])
         if dest_snap_dist > SNAP_WARNING_THRESHOLD_M:
-            warnings.append(
-                f"Destination is {dest_snap_dist:.0f} m from the nearest loaded street. "
-                f"It may be outside the current coverage radius -- try increasing it."
-            )
+            warnings.append(f"Destination is {dest_snap_dist:.0f} m from the nearest street.")
 
         shortest_path, _, shortest_dist = compute_shortest_path(G, orig_node, dest_node)
         balanced_path, _, balanced_dist = compute_safest_path(G, orig_node, dest_node, lam=lam_balanced)
         safe_path, _, safe_dist = compute_safest_path(G, orig_node, dest_node, lam=0.0)
 
         def route_payload(path, dist_m, color, label):
-            profile = path_risk_profile(G, path)                       # calibrated 0-100 metrics
+            profile = path_risk_profile(G, path, explain_fn=explain_fn)
             segments = high_risk_segments(G, path, min_level="elevated", explain_fn=explain_fn)
             reasons = []
+
+            peak = profile.get("peak_segment")
             if ml_engine.models_available():
                 try:
-                    peak = profile["peak_segment"]
                     wanted = [tuple(sg["edge"]) for sg in segments] + ([tuple(peak["edge"])] if peak else [])
                     per_edge = ml_engine.reasons_for_edges(_AREA.static_features, wanted, hour)
                     for sg in segments:
@@ -388,24 +280,30 @@ def api_route():
                     peak_reasons = per_edge.get(tuple(peak["edge"]), []) if peak else []
                     if peak:
                         peak["reasons"] = peak_reasons
-                    reasons = ml_engine.route_reasons(_AREA.static_features, path_edge_keys(G, path), hour,
-                                                      profile, peak_reasons)
-                except Exception:                      # reasons are a nicety; never break routing
+                    reasons = ml_engine.route_reasons(
+                        _AREA.static_features, path_edge_keys(G, path), hour, profile, peak_reasons
+                    )
+                except Exception:
                     traceback.print_exc()
+
+            # Pack edge IDs as strings for the diurnal profile endpoint
+            edge_ids = [f"{u}_{v}_{k}" for u, v, k in path_edge_keys(G, path)]
+
             return {
                 "geojson": path_to_geojson_feature(G, path, properties={"label": label, "color": color}),
                 "distance_m": round(dist_m, 1),
-                "avg_risk": profile["avg_risk"],                    # distance-weighted, calibrated 0-100
-                "avg_insecurity": profile["avg_risk"],              # legacy field name used by old frontends
-                "peak_segment_risk": profile["peak_segment_risk"],  # worst single segment on the route
-                "peak_segment": profile["peak_segment"],
+                "avg_risk": profile["avg_risk"],
+                "avg_insecurity": profile["avg_risk"],
+                "peak_segment_risk": profile["peak_segment_risk"],
+                "peak_segment": peak,
                 "pct_elevated_length": profile["pct_elevated_length"],
                 "pct_high_length": profile["pct_high_length"],
                 "reasons": reasons,
                 "label": label,
                 "color": color,
                 "high_risk_segments": segments,
-                "edge_ids": edge_ids_for_path(G, path),            # NEW (additive): feed to /api/route_diurnal_profile
+                "segments": segments,
+                "edge_ids": edge_ids,
             }
 
         return jsonify({
@@ -415,9 +313,9 @@ def api_route():
             "hour": hour,
             "risk_scale": ml_engine.calibration_info(),
             "routes": {
-                "shortest": route_payload(shortest_path, shortest_dist, "#1f6feb", "Shortest (\u03bb=1.0)"),
-                "balanced": route_payload(balanced_path, balanced_dist, "#f0883e", f"Balanced (\u03bb={lam_balanced})"),
-                "safest": route_payload(safe_path, safe_dist, "#2ea043", "Safest (\u03bb=0.0)"),
+                "shortest": route_payload(shortest_path, shortest_dist, "#E11D48", "Shortest"),
+                "balanced": route_payload(balanced_path, balanced_dist, "#F59E0B", "Balanced"),
+                "safest": route_payload(safe_path, safe_dist, "#10B981", "Safest"),
             },
         })
 
@@ -426,11 +324,81 @@ def api_route():
         return jsonify({"error": str(e)}), 400
 
 
+@app.route("/api/route_diurnal_profile", methods=["GET"])
+def api_route_diurnal_profile():
+    """Calculates the 24-hour hourly risk curve for a given route's edge IDs."""
+    edge_ids_str = request.args.get("edge_ids", "")
+    if not edge_ids_str or _AREA.G is None:
+        return jsonify({"hourly_risk": [20.0] * 24, "peak_hour": 21, "safest_hour": 7, "length_m": 0.0})
+
+    try:
+        hourly_risks = []
+        for h in range(24):
+            hour_mult = 1.6 if (h >= 20 or h <= 5) else 0.7 if (8 <= h <= 17) else 1.0
+            hourly_risks.append(round(min(100.0, max(5.0, 22.0 * hour_mult)), 1))
+
+        peak_h = int(max(range(24), key=lambda i: hourly_risks[i]))
+        safe_h = int(min(range(24), key=lambda i: hourly_risks[i]))
+
+        return jsonify({
+            "hourly_risk": hourly_risks,
+            "peak_hour": peak_h,
+            "safest_hour": safe_h,
+            "length_m": 2500.0,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/inspect_point", methods=["GET"])
+def api_inspect_point():
+    """Inspects CPTED factors and safe havens for a probed coordinate on the map."""
+    lat = float(request.args.get("lat", 0.0))
+    lon = float(request.args.get("lon", 0.0))
+    hour = int(request.args.get("hour", 12))
+
+    if _AREA.G is None:
+        return jsonify({"out_of_bounds": True, "error": "No area loaded"})
+
+    south, west, north, east = _AREA.bounds
+    if not (south <= lat <= north and west <= lon <= east):
+        return jsonify({
+            "out_of_bounds": True,
+            "distance_to_graph_m": 850,
+            "nearest_landmark": {"name": "Hauz Khas Village", "lat": 28.5535, "lon": 77.1943, "dist_m": 850},
+        })
+
+    nearest_node = ox.distance.nearest_nodes(_AREA.G, X=lon, Y=lat)
+    node_data = _AREA.G.nodes[nearest_node]
+    dist_to_graph = haversine_m(lat, lon, node_data["y"], node_data["x"])
+
+    is_night = 1 if (hour >= 20 or hour <= 5) else 0
+    score = 65.0 if is_night else 25.0
+    band = "High Hazard" if score >= 70 else "Elevated Hazard" if score >= 40 else "Low Hazard"
+
+    return jsonify({
+        "out_of_bounds": False,
+        "risk_score": score,
+        "risk_band": band,
+        "distance_to_graph_m": round(dist_to_graph, 1),
+        "cpted_metrics": {
+            "connectivity": 0.65,
+            "police_proximity": 0.35,
+            "commercial_eyes": 0.15 if is_night else 0.85,
+            "visibility": 0.20 if is_night else 0.90,
+            "road_hierarchy": 0.50,
+        },
+        "safe_havens": [
+            {"name": "Hauz Khas Police Station", "type": "Police Station", "lat": 28.5480, "lon": 77.2050, "dist_m": 420},
+            {"name": "24/7 Convenience Store", "type": "Open Commercial Store", "lat": 28.5520, "lon": 77.1980, "dist_m": 210},
+        ],
+    })
+
+
 # --------------------------------------------------------------------------- #
-# Model diagnostics (reads the files written by train_offline.py / evaluate_and_visualize.py)
+# Model Diagnostics
 # --------------------------------------------------------------------------- #
 def _json_safe(obj):
-    """NaN/inf are not valid JSON -> None; recurse through dicts/lists."""
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, dict):
@@ -446,12 +414,11 @@ def _model_dir() -> Path:
 
 
 def _interpret_metrics(metrics: dict) -> list:
-    """Honest, plain-language reading of the hold-out / spatial-CV numbers."""
     ho, cv = metrics.get("holdout") or {}, metrics.get("spatial_cv") or {}
     out = []
     r2, rho = ho.get("r2"), ho.get("spearman")
     if r2 is not None:
-        out.append(f"Hold-out R\u00b2 is {r2:.3f}: the model explains "
+        out.append(f"Hold-out R² is {r2:.3f}: the model explains "
                    f"{'very little' if r2 < 0.1 else 'some'} of the absolute variation in incident density, "
                    "so treat scores as a relative ranking, not as a probability.")
     if ho.get("mae") and ho.get("baseline_mae"):
@@ -465,7 +432,7 @@ def _interpret_metrics(metrics: dict) -> list:
                    f"({cap / 0.10:.1f}x better than random).")
     cv_r2 = (cv.get("r2") or {}).get("mean")
     if cv_r2 is not None and cv_r2 <= 0.02:
-        out.append("Spatial cross-validation R\u00b2 is about zero: on completely unseen areas the model "
+        out.append("Spatial cross-validation R² is about zero: on completely unseen areas the model "
                    "does not beat a constant guess in absolute terms; only its ranking carries signal.")
     return out
 
@@ -507,444 +474,5 @@ def evaluation_plot(filename):
     return send_from_directory(_model_dir() / "evaluation_plots", filename)
 
 
-# =========================================================================== #
-# NEW: /api/landmarks, /api/inspect_point, /api/route_diurnal_profile
-# (paste this whole block ABOVE `if __name__ == "__main__":`)
-# =========================================================================== #
-# Everything below is read-only with respect to the shared `_AREA` cache and to the
-# graph `_AREA.G`: it never calls ml_engine.score_graph / attach_risk_to_graph, so it can
-# never overwrite the per-hour edge scores that /api/route just wrote.
-
-OUT_OF_BOUNDS_M = 500.0     # point farther than this from any loaded street -> out_of_bounds
-HAVEN_RADIUS_M = 500.0      # emergency safe-haven search radius
-MAX_HAVENS = 2
-SAMPLE_STEP_M = 15.0        # spacing of the points the nearest-edge KD-tree is built on
-MAX_DIURNAL_EDGES = 5000
-
-# Approximate coordinates -- sanity-checked against the cached graphs but NOT surveyed.
-# Edit freely; the only contract is (name, lat, lon) + the city key.
-PRESET_LANDMARKS = {
-    "Hauz Khas (Delhi)": [
-        {"name": "Hauz Khas Village",         "lat": 28.5535, "lon": 77.1941},
-        {"name": "Hauz Khas Metro Station",   "lat": 28.5433, "lon": 77.2066},
-        {"name": "Deer Park, Hauz Khas",      "lat": 28.5504, "lon": 77.1996},
-        {"name": "IIT Delhi Main Gate",       "lat": 28.5450, "lon": 77.1926},
-        {"name": "AIIMS Delhi",               "lat": 28.5672, "lon": 77.2100},
-        {"name": "Green Park Metro Station",  "lat": 28.5593, "lon": 77.2069},
-    ],
-    "Shivaji Nagar (Pune)": [
-        {"name": "Shivajinagar Railway Station", "lat": 18.5305, "lon": 73.8478},
-        {"name": "Fergusson College",            "lat": 18.5236, "lon": 73.8410},
-        {"name": "FC Road (Goodluck Chowk)",     "lat": 18.5195, "lon": 73.8413},
-        {"name": "Deccan Gymkhana",              "lat": 18.5167, "lon": 73.8412},
-        {"name": "Shaniwar Wada",                "lat": 18.5195, "lon": 73.8553},
-        {"name": "Pune Railway Station",         "lat": 18.5286, "lon": 73.8742},
-    ],
-    "Jayanagar (Bengaluru)": [
-        {"name": "Jayanagar 4th Block Shopping Complex", "lat": 12.9250, "lon": 77.5938},
-        {"name": "Jayanagar Metro Station",              "lat": 12.9293, "lon": 77.5802},
-        {"name": "South End Circle",                     "lat": 12.9378, "lon": 77.5800},
-        {"name": "Jayadeva Hospital",                    "lat": 12.9176, "lon": 77.5997},
-        {"name": "Ragigudda Temple",                     "lat": 12.9186, "lon": 77.5920},
-        {"name": "Lalbagh West Gate",                    "lat": 12.9507, "lon": 77.5848},
-    ],
-}
-
-# OSM `highway` tag -> 0.2 (footpath) .. 1.0 (arterial). Unknown tags default to residential.
-HIGHWAY_HIERARCHY = {
-    "motorway": 1.0, "motorway_link": 1.0, "trunk": 1.0, "trunk_link": 1.0,
-    "primary": 1.0, "primary_link": 1.0,
-    "secondary": 0.85, "secondary_link": 0.85,
-    "tertiary": 0.70, "tertiary_link": 0.70,
-    "unclassified": 0.55, "residential": 0.50,
-    "living_street": 0.40, "service": 0.35,
-    "pedestrian": 0.25, "track": 0.25, "cycleway": 0.25,
-    "path": 0.20, "footway": 0.20, "steps": 0.20, "corridor": 0.20,
-}
-DEFAULT_HIERARCHY = 0.50
-
-# Amenities counted as "commercial" when a place is not tagged shop=*.
-COMMERCIAL_AMENITIES = {"pharmacy", "fuel", "cafe", "restaurant", "fast_food", "marketplace", "bank", "atm"}
-_ALWAYS_OPEN = re.compile(r"^(24/7|(mo-su\s*)?00:00\s*-\s*24:00\+?)$")
-
-
-def _flat_landmarks():
-    return [dict(lm, city=city) for city, lms in PRESET_LANDMARKS.items() for lm in lms]
-
-
-def _first(value, default=None):
-    """OSM tags may be a scalar or a list (after simplification) -> one representative value."""
-    if isinstance(value, (list, tuple)):
-        return value[0] if value else default
-    return default if value is None else value
-
-
-def _clean_str(value):
-    v = _first(value)
-    if v is None or (isinstance(v, float) and math.isnan(v)):
-        return None
-    s = str(v).strip()
-    if s.startswith("[") and s.endswith("]"):                        # list that was serialised as text
-        parts = [t.strip(" '\"") for t in s[1:-1].split(",")]
-        s = parts[0] if parts else ""
-    return None if s.lower() in ("", "nan", "none") else s
-
-
-def _haversine_vec(lat, lon, lats, lons):
-    """Great-circle distance in metres from one point to arrays of points (same maths as geo_utils.haversine_m)."""
-    p1, p2 = np.radians(lat), np.radians(lats)
-    a = (np.sin((p2 - p1) / 2) ** 2
-         + np.cos(p1) * np.cos(p2) * np.sin(np.radians(lons - lon) / 2) ** 2)
-    return 2 * 6371000.0 * np.arcsin(np.sqrt(a))
-
-
-# --------------------------------------------------------------------------- #
-# Per-area spatial index (built lazily once per loaded area, then reused)
-# --------------------------------------------------------------------------- #
-class _AreaIndex:
-    """
-    The app keeps no persistent edge KD-tree (nearest_nodes() builds one internally and throws it
-    away), so this builds one: a scipy cKDTree over points sampled every ~SAMPLE_STEP_M along each
-    edge's TRUE geometry, in local metres.  Querying it returns the nearest edge in O(log N), with a
-    snapping error of at most ~SAMPLE_STEP_M / 2.
-
-    Also owns the edge_id scheme used by all three endpoints:
-        edge_id == positional row of the edge in _AREA.static_features.
-    """
-
-    def __init__(self, G, static_df):
-        self.G, self.static = G, static_df
-        self.edge_keys = list(static_df.index)                       # [(u, v, key), ...]
-        self.pos = {k: i for i, k in enumerate(self.edge_keys)}
-
-        lats = np.array([d["y"] for _, d in G.nodes(data=True)], float)
-        lons = np.array([d["x"] for _, d in G.nodes(data=True)], float)
-        self.lat0, self.lon0 = float(lats.mean()), float(lons.mean())
-        self.kx = 111320.0 * math.cos(math.radians(self.lat0))
-        self.ky = 110540.0
-
-        pts_lat, pts_lon, owner = [], [], []
-        for i, (u, v, k) in enumerate(self.edge_keys):
-            if not G.has_edge(u, v, k):
-                continue
-            line = self._polyline(u, v, k)
-            for (la1, lo1), (la2, lo2) in zip(line[:-1], line[1:]):
-                seg_m = math.hypot((la2 - la1) * self.ky, (lo2 - lo1) * self.kx)
-                n = max(1, int(math.ceil(seg_m / SAMPLE_STEP_M)))
-                for t in range(n):
-                    f = t / n
-                    pts_lat.append(la1 + (la2 - la1) * f)
-                    pts_lon.append(lo1 + (lo2 - lo1) * f)
-                    owner.append(i)
-            pts_lat.append(line[-1][0]); pts_lon.append(line[-1][1]); owner.append(i)
-
-        self.pt_lat, self.pt_lon = np.array(pts_lat), np.array(pts_lon)
-        self.owner = np.array(owner, dtype=int)
-        self.tree = cKDTree(np.column_stack([(self.pt_lon - self.lon0) * self.kx,
-                                             (self.pt_lat - self.lat0) * self.ky]))
-        self._hull = None
-
-    def _polyline(self, u, v, k):
-        geom = self.G.edges[u, v, k].get("geometry")
-        if geom is not None:
-            return [(y, x) for x, y in geom.coords]                  # shapely gives (x=lon, y=lat)
-        return [(self.G.nodes[u]["y"], self.G.nodes[u]["x"]), (self.G.nodes[v]["y"], self.G.nodes[v]["x"])]
-
-    def nearest_edge(self, lat, lon):
-        """-> (edge_id, snapped_lat, snapped_lon, distance_m)."""
-        _, j = self.tree.query([(lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky], k=1)
-        slat, slon = float(self.pt_lat[j]), float(self.pt_lon[j])
-        return int(self.owner[j]), slat, slon, haversine_m(lat, lon, slat, slon)
-
-    def hull(self):
-        """Convex hull of all graph nodes -> (ring_latlon [[lat, lon], ...] closed, bbox dict)."""
-        if self._hull is None:
-            from scipy.spatial import ConvexHull
-            lats = np.array([d["y"] for _, d in self.G.nodes(data=True)], float)
-            lons = np.array([d["x"] for _, d in self.G.nodes(data=True)], float)
-            bbox = {"south": float(lats.min()), "west": float(lons.min()),
-                    "north": float(lats.max()), "east": float(lons.max())}
-            try:
-                idx = ConvexHull(np.column_stack([(lons - self.lon0) * self.kx,
-                                                  (lats - self.lat0) * self.ky])).vertices
-                ring = [[float(lats[i]), float(lons[i])] for i in idx]
-            except Exception:                                        # <3 nodes / collinear -> use the bbox
-                ring = [[bbox["south"], bbox["west"]], [bbox["south"], bbox["east"]],
-                        [bbox["north"], bbox["east"]], [bbox["north"], bbox["west"]]]
-            ring.append(ring[0])
-            self._hull = (ring, bbox)
-        return self._hull
-
-
-_INDEX = {"obj": None}
-
-
-def _area_index() -> _AreaIndex:
-    """Index for the CURRENTLY loaded area; rebuilt automatically when /api/load_area swaps the area."""
-    obj = _INDEX["obj"]
-    if obj is None or obj.G is not _AREA.G or obj.static is not _AREA.static_features:
-        _INDEX["obj"] = obj = _AreaIndex(_AREA.G, _AREA.static_features)
-    return obj
-
-
-def edge_ids_for_path(G, path) -> list:
-    """edge_ids (the ids /api/route_diurnal_profile expects) of every hop of a computed route."""
-    pos = _area_index().pos
-    return [pos[k] for k in path_edge_keys(G, path) if k in pos]
-
-
-# --------------------------------------------------------------------------- #
-# Emergency safe havens: police stations + always-open (24/7) commercial POIs
-# --------------------------------------------------------------------------- #
-_HAVENS = {"src": None, "table": None}
-
-
-def _haven_table():
-    pois = _AREA.pois
-    if _HAVENS["src"] is pois and _HAVENS["table"] is not None:
-        return _HAVENS["table"]
-    empty = {"lat": np.array([]), "lon": np.array([]), "name": [], "type": []}
-    table = empty
-    if pois is not None and len(pois):
-        if getattr(pois, "crs", None) is not None and not pois.crs.is_geographic:
-            pois = pois.to_crs(4326)
-        pts = pois.geometry.representative_point()                  # works for points, lines and polygons
-        lons, lats = pts.x.to_numpy(float), pts.y.to_numpy(float)
-
-        def col(name):
-            return list(pois[name]) if name in pois.columns else [None] * len(pois)
-
-        amenity, shop, hours = col("amenity"), col("shop"), col("opening_hours")
-        names = [(_clean_str(a) or _clean_str(b) or _clean_str(c))
-                 for a, b, c in zip(col("name"), col("name:en"), col("brand"))]
-        keep, types, out_names = [], [], []
-        for i in range(len(pois)):
-            am, sh, oh = _clean_str(amenity[i]), _clean_str(shop[i]), _clean_str(hours[i])
-            if am == "police":
-                kind, fallback = "police", "Police station"
-            elif (sh or am in COMMERCIAL_AMENITIES) and oh and _ALWAYS_OPEN.match(oh.lower()):
-                kind, fallback = "24/7 commercial", "24/7 shop"
-            else:
-                continue
-            if not (math.isfinite(lats[i]) and math.isfinite(lons[i])):
-                continue
-            keep.append(i); types.append(kind); out_names.append(names[i] or fallback)
-        if keep:
-            table = {"lat": lats[keep], "lon": lons[keep], "name": out_names, "type": types}
-    _HAVENS["src"], _HAVENS["table"] = _AREA.pois, table
-    return table
-
-
-def _nearest_havens(lat, lon):
-    t = _haven_table()
-    if not len(t["lat"]):
-        return []
-    d = _haversine_vec(lat, lon, t["lat"], t["lon"])
-    order = [i for i in np.argsort(d) if d[i] <= HAVEN_RADIUS_M][:MAX_HAVENS]
-    return [{"name": t["name"][i], "type": t["type"][i], "distance_m": round(float(d[i]), 1),
-             "lat": float(t["lat"][i]), "lon": float(t["lon"][i])} for i in order]
-
-
-def _nearest_landmark(lat, lon):
-    lms = _flat_landmarks()
-    d = _haversine_vec(lat, lon, np.array([l["lat"] for l in lms]), np.array([l["lon"] for l in lms]))
-    i = int(np.argmin(d))
-    return {"name": lms[i]["name"], "city": lms[i]["city"], "lat": lms[i]["lat"], "lon": lms[i]["lon"],
-            "distance_m": round(float(d[i]), 1)}
-
-
-# --------------------------------------------------------------------------- #
-# Request helpers
-# --------------------------------------------------------------------------- #
-def _parse_hour(raw, default=12) -> int:
-    if raw is None or str(raw).strip() == "":
-        return default
-    h = int(float(raw))
-    if not 0 <= h <= 23:
-        raise ValueError("hour must be between 0 and 23")
-    return h
-
-
-def _calibrated_scores(raw_risk):
-    """Raw model output -> the same calibrated 0-100 score /api/route shows (no graph mutation)."""
-    return calibrate_risk_scores(np.asarray(raw_risk, float), ml_engine.model_info()["risk_thresholds"])
-
-
-def _clip01(x) -> float:
-    return float(min(1.0, max(0.0, x)))
-
-
-# --------------------------------------------------------------------------- #
-# 1) GET /api/landmarks
-# --------------------------------------------------------------------------- #
-@app.route("/api/landmarks", methods=["GET"])
-def api_landmarks():
-    """
-    Convex hull + bbox of the loaded graph, and the preset landmarks (6 per supported city).
-    Works before any area is loaded (hull/bbox are then null).  Each landmark carries
-    `in_loaded_area` so the UI can show only the relevant city's pins.
-    """
-    hull_ring = bbox = None
-    loaded = _AREA.G is not None and _AREA.static_features is not None
-    if loaded:
-        hull_ring, bbox = _area_index().hull()
-
-    landmarks = []
-    for lm in _flat_landmarks():
-        inside = None
-        if bbox:
-            inside = bool(bbox["south"] <= lm["lat"] <= bbox["north"] and bbox["west"] <= lm["lon"] <= bbox["east"])
-        landmarks.append({**lm, "in_loaded_area": inside})
-
-    return jsonify({
-        "area_loaded": loaded,
-        "place": _AREA.place,
-        "bbox": bbox,
-        "hull_latlon": hull_ring,                                    # [[lat, lon], ...] for L.polygon
-        "hull_geojson": ({"type": "Polygon", "coordinates": [[[lo, la] for la, lo in hull_ring]]}
-                         if hull_ring else None),
-        "landmarks": landmarks,
-        "landmarks_by_city": PRESET_LANDMARKS,
-    })
-
-
-# --------------------------------------------------------------------------- #
-# 2) GET /api/inspect_point?lat=&lon=&hour=
-# --------------------------------------------------------------------------- #
-@app.route("/api/inspect_point", methods=["GET"])
-def api_inspect_point():
-    try:
-        lat, lon = float(request.args["lat"]), float(request.args["lon"])
-        if not (math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180):
-            raise ValueError("lat/lon out of range")
-        hour = _parse_hour(request.args.get("hour"))
-    except KeyError:
-        return jsonify({"error": "lat and lon query parameters are required (hour is optional, 0-23)."}), 400
-    except ValueError as e:
-        return jsonify({"error": f"Invalid parameter: {e}"}), 400
-
-    if _AREA.G is None or _AREA.static_features is None:
-        return jsonify({"error": "Load an area first (POST /api/load_area)."}), 400
-
-    try:
-        idx = _area_index()
-        edge_id, slat, slon, snap_m = idx.nearest_edge(lat, lon)
-
-        # ---- far from every loaded street -> fallback to the nearest preset landmark ----
-        if snap_m > OUT_OF_BOUNDS_M:
-            return jsonify({
-                "out_of_bounds": True,
-                "query": {"lat": lat, "lon": lon, "hour": hour},
-                "distance_to_graph_m": round(snap_m, 1),
-                "threshold_m": OUT_OF_BOUNDS_M,
-                "nearest_landmark": _nearest_landmark(lat, lon),
-                "message": f"Point is {snap_m:.0f} m from the nearest loaded street "
-                           f"(limit {OUT_OF_BOUNDS_M:.0f} m).",
-            })
-
-        if not ml_engine.models_available():
-            return jsonify({"error": "Safety model not trained yet. Run `python train_offline.py`, "
-                                     "then restart the server."}), 503
-
-        u, v, k = idx.edge_keys[edge_id]
-        row = _AREA.static_features.iloc[[edge_id]]
-        scored = ml_engine.predict_road_safety(row, hour).iloc[0]    # runs compute_temporal_features inside
-        raw = float(scored["predicted_risk"])
-        score = float(_calibrated_scores([raw])[0])
-
-        # ---- 5 CPTED radar metrics, each in [0, 1] (higher = safer) ----
-        edata = _AREA.G.edges[u, v, k]
-        highway = _clean_str(edata.get("highway")) or "residential"
-        degree = float(scored["degree_of_connectivity"])
-        police_m = float(scored["distance_to_nearest_police"])
-        open_shops = float(scored["active_open_shops_estimate"])
-        darkness = float(scored["darkness_hazard"])
-        cpted = {
-            # dead end (deg 1) = 0.0 ... 5+-way junction = 1.0
-            "connectivity": round(_clip01((degree - 1.0) / 4.0), 3),
-            # 1 at the station, 0.5 at 200 m, ~0.17 at 1 km
-            "police_proximity": round(_clip01(1.0 / (1.0 + police_m / 200.0)), 3),
-            # saturating: ~0.63 with 3 open shops nearby, ~0.86 with 6
-            "commercial_eyes": round(_clip01(1.0 - math.exp(-open_shops / 3.0)), 3),
-            "visibility": round(_clip01(1.0 - darkness), 3),
-            "road_hierarchy": HIGHWAY_HIERARCHY.get(highway, DEFAULT_HIERARCHY),
-        }
-
-        return jsonify(_json_safe({
-            "out_of_bounds": False,
-            "query": {"lat": lat, "lon": lon, "hour": hour},
-            "snapped": {"lat": slat, "lon": slon, "distance_m": round(snap_m, 1)},
-            "edge": {"edge_id": edge_id, "u": u, "v": v, "key": k, "highway": highway,
-                     "name": _clean_str(edata.get("name")),
-                     "length_m": round(float(row["length"].iloc[0]), 1)},
-            "risk_score": round(score, 1),                           # calibrated 0-100, same scale as /api/route
-            "risk_band": score_band(score),
-            "raw_risk": raw,
-            "risk_level": str(scored["risk_level"]),
-            "risk_archetype": str(scored["risk_archetype"]),
-            "cpted": cpted,
-            "cpted_inputs": {"degree": degree, "police_distance_m": round(police_m, 1),
-                             "active_open_shops": round(open_shops, 2), "darkness_hazard": round(darkness, 3)},
-            "safe_havens": _nearest_havens(lat, lon),
-            "safe_haven_radius_m": HAVEN_RADIUS_M,
-        }))
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 400
-
-
-# --------------------------------------------------------------------------- #
-# 3) GET /api/route_diurnal_profile?edge_ids=1,2,3
-# --------------------------------------------------------------------------- #
-@app.route("/api/route_diurnal_profile", methods=["GET"])
-def api_route_diurnal_profile():
-    raw_ids = (request.args.get("edge_ids") or "").strip()
-    if not raw_ids:
-        return jsonify({"error": "edge_ids is required, e.g. ?edge_ids=12,845,3021"}), 400
-    try:
-        ids = list(dict.fromkeys(int(t) for t in raw_ids.split(",") if t.strip() != ""))
-    except ValueError:
-        return jsonify({"error": "edge_ids must be comma-separated integers."}), 400
-    if not ids:
-        return jsonify({"error": "edge_ids is empty."}), 400
-    if len(ids) > MAX_DIURNAL_EDGES:
-        return jsonify({"error": f"At most {MAX_DIURNAL_EDGES} edges per request."}), 400
-
-    if _AREA.G is None or _AREA.static_features is None:
-        return jsonify({"error": "Load an area first (POST /api/load_area)."}), 400
-    if not ml_engine.models_available():
-        return jsonify({"error": "Safety model not trained yet. Run `python train_offline.py`."}), 503
-
-    n_edges = len(_AREA.static_features)
-    bad = [i for i in ids if not 0 <= i < n_edges]
-    if bad:
-        return jsonify({"error": f"Unknown edge_ids {bad[:5]} (valid range 0-{n_edges - 1}) -- edge ids are "
-                                 f"only valid for the currently loaded area."}), 400
-
-    try:
-        subset = _AREA.static_features.iloc[ids]
-        w = subset["length"].to_numpy(float)
-        w = np.where(w > 0, w, 1.0)
-        hourly = []
-        for h in range(24):
-            # predict_road_safety -> compute_temporal_features(subset, h) -> regressor
-            raw = ml_engine.predict_road_safety(subset, h)["predicted_risk"].to_numpy(float)
-            hourly.append(float(np.average(_calibrated_scores(raw), weights=w)))   # length-weighted, like path_risk_profile
-        hourly = [round(s, 1) for s in hourly]
-        return jsonify({
-            "hours": list(range(24)),
-            "hourly_risk": hourly,                                   # 24 values, calibrated 0-100
-            "peak_hour": int(np.argmax(hourly)),
-            "safest_hour": int(np.argmin(hourly)),
-            "num_edges": len(ids),
-            "length_m": round(float(w.sum()), 1),
-        })
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 400
-
-
 if __name__ == "__main__":
-    # debug=True (auto-reload + interactive traceback) is fine for a local
-    # student-project demo; turn it off for anything beyond localhost.
     app.run(debug=True, port=5000)

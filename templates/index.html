@@ -16,10 +16,10 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
   
   <!-- Main HUD Stylesheet with Cache-Buster -->
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=105">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=115">
 
   <style>
-    /* Critical alignment overrides to guarantee button, form, and chip sizing */
+    /* Critical Form & Layout Resets */
     .row, .input-row {
       display: flex !important;
       flex-direction: row !important;
@@ -58,6 +58,239 @@
       padding: 5px 11px !important;
       font-size: 11.5px !important;
     }
+
+    /* 3-Column Tab Buttons */
+    .route-selector {
+      display: grid !important;
+      grid-template-columns: repeat(3, 1fr) !important;
+      gap: 6px !important;
+      margin-bottom: 12px !important;
+    }
+    .route-tab-btn {
+      background: #18181b !important;
+      border: 1px solid #27272a !important;
+      border-radius: 8px !important;
+      padding: 8px 6px !important;
+      cursor: pointer !important;
+      text-align: center !important;
+      transition: all 0.15s ease !important;
+      user-select: none !important;
+    }
+    .route-tab-btn:hover { background: #27272a !important; }
+    .route-tab-btn.active-shortest {
+      background: rgba(244, 63, 94, 0.15) !important;
+      border-color: #f43f5e !important;
+    }
+    .route-tab-btn.active-balanced {
+      background: rgba(234, 179, 8, 0.15) !important;
+      border-color: #eab308 !important;
+    }
+    .route-tab-btn.active-safest {
+      background: rgba(20, 184, 166, 0.15) !important;
+      border-color: #14b8a6 !important;
+    }
+    .route-tab-title {
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 4px !important;
+    }
+    .route-tab-metric {
+      font-family: var(--font-mono, monospace) !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      color: #e4e4e7 !important;
+      margin-top: 2px !important;
+    }
+    .route-tab-sub {
+      font-size: 9.5px !important;
+      color: #8b8b93 !important;
+    }
+
+    /* Key Metrics Grid */
+    .route-stats-grid {
+      display: grid !important;
+      grid-template-columns: repeat(3, 1fr) !important;
+      background: #111114 !important;
+      border: 1px solid #27272a !important;
+      border-radius: 8px !important;
+      padding: 8px 6px !important;
+      text-align: center !important;
+      margin-bottom: 10px !important;
+    }
+    .route-stat-item {
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+    }
+    .route-stat-item .stat-label {
+      font-size: 9.5px !important;
+      text-transform: uppercase !important;
+      color: #8b8b93 !important;
+      font-weight: 600 !important;
+    }
+    .route-stat-item .stat-val {
+      font-family: var(--font-mono, monospace) !important;
+      font-size: 13.5px !important;
+      font-weight: 700 !important;
+      margin-top: 2px !important;
+    }
+
+    /* Peak Hazard Bottleneck Warning Banner */
+    .peak-hazard-banner {
+      background: rgba(244, 63, 94, 0.08) !important;
+      border: 1px solid rgba(244, 63, 94, 0.3) !important;
+      border-left: 4px solid #f43f5e !important;
+      border-radius: 8px !important;
+      padding: 10px 12px !important;
+      margin: 10px 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 5px !important;
+    }
+    .peak-hazard-header {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.05em !important;
+      color: #f43f5e !important;
+    }
+    .peak-hazard-body {
+      font-size: 11.5px !important;
+      color: #e4e4e7 !important;
+      line-height: 1.4 !important;
+    }
+    .peak-reasons-list {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 4px !important;
+      margin-top: 4px !important;
+    }
+    .peak-reason-tag {
+      display: flex !important;
+      align-items: flex-start !important;
+      gap: 6px !important;
+      font-size: 11px !important;
+      color: #fca5a5 !important;
+      background: rgba(244, 63, 94, 0.12) !important;
+      border-radius: 4px !important;
+      padding: 3px 6px !important;
+      line-height: 1.35 !important;
+    }
+    .peak-hazard-action {
+      margin-top: 4px !important;
+      font-size: 11.5px !important;
+      color: #38bdf8 !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      text-decoration: underline !important;
+    }
+    .peak-hazard-action:hover { color: #7dd3fc !important; }
+
+    /* Map Hazard Layer: Striped/Dashed Overlay Line */
+    .peak-hazard-polyline {
+      stroke: #ff2a5f !important;
+      stroke-width: 8 !important;
+      stroke-opacity: 0.85 !important;
+      stroke-dasharray: 8, 8 !important;
+      stroke-linecap: round !important;
+      filter: drop-shadow(0 0 6px rgba(255, 42, 95, 0.75)) !important;
+    }
+
+    /* Environmental Factor Chips */
+    .factor-list {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 6px !important;
+      margin: 8px 0 10px !important;
+    }
+    .factor-chip {
+      display: flex !important;
+      align-items: flex-start !important;
+      gap: 6px !important;
+      font-size: 11.5px !important;
+      line-height: 1.4 !important;
+      padding: 7px 10px !important;
+      border-radius: 8px !important;
+      background: #18181b !important;
+      border: 1px solid #27272a !important;
+    }
+    .factor-chip.danger {
+      border-left: 3.5px solid #f43f5e !important;
+      background: rgba(244, 63, 94, 0.08) !important;
+      color: #fecdd3 !important;
+    }
+    .factor-chip.safe {
+      border-left: 3.5px solid #10b981 !important;
+      background: rgba(16, 185, 129, 0.08) !important;
+      color: #a7f3d0 !important;
+    }
+    .factor-chip.neutral {
+      border-left: 3.5px solid #06b6d4 !important;
+      background: rgba(6, 182, 212, 0.08) !important;
+      color: #cffafe !important;
+    }
+
+    /* Highlighted Segments Accordion (Clean Vertical Stack) */
+    .accordion-header {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      padding: 8px 12px !important;
+      background: #18181b !important;
+      border: 1px solid #27272a !important;
+      border-radius: 8px !important;
+      cursor: pointer !important;
+      font-size: 11.5px !important;
+      font-weight: 700 !important;
+      color: #e4e4e7 !important;
+      margin-top: 10px !important;
+      user-select: none !important;
+    }
+    .accordion-header:hover { background: #27272a !important; }
+    .accordion-body {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px !important;
+      margin-top: 8px !important;
+      max-height: 280px !important;
+      overflow-y: auto !important;
+    }
+    .segment-card {
+      display: block !important;
+      width: 100% !important;
+      background: #121215 !important;
+      border: 1px solid #27272a !important;
+      border-left: 3px solid #f43f5e !important;
+      border-radius: 6px !important;
+      padding: 8px 10px !important;
+      box-sizing: border-box !important;
+    }
+    .segment-card-top {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      font-family: var(--font-mono, monospace) !important;
+      font-size: 11px !important;
+      font-weight: 700 !important;
+      margin-bottom: 4px !important;
+    }
+    .segment-card-desc {
+      font-size: 11px !important;
+      line-height: 1.4 !important;
+      color: #a1a1aa !important;
+      word-break: break-word !important;
+    }
+
     #drawer .row {
       display: flex !important;
       flex-direction: row !important;
@@ -161,7 +394,7 @@
         <p id="route-status" class="status"></p>
       </section>
 
-      <!-- Panel 4: Routes & Explanations (Restores full HUD stats and reasons) -->
+      <!-- Panel 4: Routes & Explanations -->
       <section class="panel" id="results-panel" style="display:none;">
         <h2>4. Routes</h2>
         <div id="route-rows"></div>
@@ -335,6 +568,8 @@
     const landmarkLayer = L.layerGroup().addTo(map);
     const routeGroup = L.layerGroup().addTo(map);
     const havenLayer = L.layerGroup().addTo(map);
+    const peakHazardLayer = L.layerGroup().addTo(map);
+
     let routeLayers = {};
     let originMarker = null, destMarker = null, probeMarker = null;
 
@@ -507,6 +742,7 @@
 
     function clearRoutes() {
       routeGroup.clearLayers(); routeLayers = {};
+      peakHazardLayer.clearLayers();
       S.routes = null; S.diurnal = {};
       $("results-panel").style.display = "none";
       $("diurnal-panel").style.display = "none";
@@ -518,10 +754,11 @@
         geojson: r.geojson,
         length_m: r.distance_m ?? r.length_m ?? 0,
         risk: r.avg_risk ?? r.risk_score ?? r.avg_insecurity ?? null,
-        peak: r.peak_segment_risk ?? r.peak ?? null,
+        peak: r.peak_segment_risk ?? (r.peak_segment ? r.peak_segment.risk_score : null),
+        peak_segment: r.peak_segment || null,
         edge_ids: r.edge_ids || [],
         reasons: r.reasons || r.explanations || [],
-        segments: r.segments || r.highlighted_segments || [],
+        segments: r.high_risk_segments || r.segments || [],
       };
     }
 
@@ -554,7 +791,7 @@
     }
 
     /* =====================================================================
-     * ROUTE RENDERING & EXPLANATIONS (Restores original HUD factors & chips)
+     * ROUTE RENDERING & EXPLANATIONS
      * ===================================================================== */
     function renderRoutes(warnings) {
       const allBounds = [];
@@ -575,7 +812,6 @@
         map.fitBounds(b.pad(0.18), fitOpts({ maxZoom: 17 }));
       }
 
-      // Top 3 Horizontal Selector Tabs
       const container = $("route-rows");
       container.innerHTML = `
         <div class="route-selector">
@@ -625,11 +861,11 @@
       const r = S.routes[key];
       const st = ROUTE_STYLE[key];
 
+      peakHazardLayer.clearLayers();
+
       ROUTE_KEYS.forEach((k) => {
         const tab = $("tab-" + k);
-        if (tab) {
-          tab.className = "route-tab-btn" + (k === key ? ` active-${k}` : "");
-        }
+        if (tab) tab.className = "route-tab-btn" + (k === key ? ` active-${k}` : "");
         const l = routeLayers[k]; if (!l) return;
         const on = (k === key);
         l.halo.setStyle({ opacity: on ? 0.38 : 0.1, weight: on ? 16 : 10 });
@@ -655,6 +891,79 @@
         `;
       }
 
+      // Render Peak Hazard Bottleneck Warning
+      let peakBannerBox = $("peak-hazard-banner-box");
+      if (!peakBannerBox) {
+        peakBannerBox = document.createElement("div");
+        peakBannerBox.id = "peak-hazard-banner-box";
+        statsGrid.parentNode.insertBefore(peakBannerBox, statsGrid.nextSibling);
+      }
+
+      const peakSeg = r.peak_segment || (r.segments && r.segments[0]) || null;
+      const peakVal = Math.round(r.peak ?? (peakSeg ? (peakSeg.risk_score ?? peakSeg.risk ?? 0) : 0));
+
+      if (peakVal >= 40 && peakSeg) {
+        const lengthM = Math.round(peakSeg.length_m || 0);
+        const streetName = peakSeg.street_name || (peakSeg.reasons && peakSeg.reasons[0]) || "";
+        const micro = peakSeg.micro_explanation || {};
+        const riskFactors = micro.top_risk_factors || [];
+
+        const reasonsList = riskFactors.length 
+          ? riskFactors.map(f => f.text || f.factor) 
+          : (r.reasons && r.reasons.length ? r.reasons.slice(0, 2) : ["Limited street lighting and lower passive surveillance"]);
+
+        peakBannerBox.innerHTML = `
+          <div class="peak-hazard-banner">
+            <div class="peak-hazard-header">
+              <span><i class="fa-solid fa-triangle-exclamation"></i> Peak Hazard Bottleneck</span>
+              <span style="font-family:var(--font-mono); font-size:12px;">${peakVal}/100 Risk</span>
+            </div>
+            <div class="peak-hazard-body">
+              Although this path averages <b>${Math.round(r.risk ?? 0)}/100</b>, a stretch of <b>${lengthM} m</b> ${streetName ? `(${esc(streetName)})` : ''} reaches maximum caution.
+            </div>
+            
+            <div class="peak-reasons-list">
+              ${reasonsList.map(txt => `
+                <div class="peak-reason-tag">
+                  <i class="fa-solid fa-circle-exclamation"></i>
+                  <span>${esc(txt)}</span>
+                </div>
+              `).join("")}
+            </div>
+
+            ${peakSeg.coords && peakSeg.coords.length ? `
+              <div class="peak-hazard-action" onclick="window.zoomToPeakStretch()">
+                <i class="fa-solid fa-crosshairs"></i> Locate this ${lengthM} m stretch on map
+              </div>
+            ` : ""}
+          </div>
+        `;
+
+        if (peakSeg.coords && peakSeg.coords.length) {
+          const peakLine = L.polyline(peakSeg.coords, {
+            className: "peak-hazard-polyline",
+            lineCap: "round",
+          }).addTo(peakHazardLayer);
+
+          const midIdx = Math.floor(peakSeg.coords.length / 2);
+          const midPt = peakSeg.coords[midIdx];
+          const warnIcon = L.divIcon({
+            className: '',
+            html: '<div style="background:#f43f5e; color:#fff; border-radius:50%; width:20px; height:20px; display:grid; place-items:center; font-size:10px; font-weight:800; border:2px solid #fff; box-shadow:0 0 8px rgba(0,0,0,0.5);">⚠️</div>',
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+          });
+          L.marker(midPt, { icon: warnIcon }).bindTooltip(`⚠️ Peak Bottleneck: ${peakVal}/100 Risk (${lengthM} m)`).addTo(peakHazardLayer);
+
+          window.zoomToPeakStretch = () => {
+            map.fitBounds(peakLine.getBounds().pad(0.35), { maxZoom: 18, animate: true });
+          };
+        }
+      } else {
+        peakBannerBox.innerHTML = "";
+      }
+
+      // Populate Reasons / Factors list
       const factorsBox = $("route-factors-box");
       if (factorsBox) {
         if (r.reasons && r.reasons.length) {
@@ -669,10 +978,11 @@
             return `<div class="factor-chip ${kind}">&bull; ${esc(reason)}</div>`;
           }).join("");
         } else {
-          factorsBox.innerHTML = `<div class="factor-chip neutral">&bull; Typical neighborhood baseline street risk throughout this path.</div>`;
+          factorsBox.innerHTML = `<div class="factor-chip neutral">&bull; Baseline neighborhood street environment throughout this path.</div>`;
         }
       }
 
+      // Populate Segments Accordion (Clean Vertical Stack)
       const segBox = $("route-segments-container");
       if (segBox) {
         if (r.segments && r.segments.length) {
@@ -682,15 +992,25 @@
               <i class="fa-solid fa-chevron-down chevron" id="seg-chevron"></i>
             </div>
             <div class="accordion-body" id="seg-accordion-body" style="display:none;">
-              ${r.segments.map(seg => `
-                <div class="segment-card">
-                  <div class="segment-card-top">
-                    <span style="color:${riskColor(seg.risk)}">Risk ${Math.round(seg.risk)}/100</span>
-                    <span style="color:var(--text-dim, #8b8b93)">${Math.round(seg.length_m)} m</span>
+              ${r.segments.map(seg => {
+                const segScore = Math.round(seg.risk_score ?? seg.risk ?? 0);
+                const segLen = Math.round(seg.length_m ?? 0);
+                const segText = seg.reason 
+                  || (seg.micro_explanation?.top_risk_factors?.[0]?.text) 
+                  || (seg.reasons && seg.reasons[0]) 
+                  || seg.description 
+                  || "Elevated street risk";
+
+                return `
+                  <div class="segment-card">
+                    <div class="segment-card-top">
+                      <span style="color:${riskColor(segScore)}">Risk ${segScore}/100</span>
+                      <span style="color:#71717a">${segLen} m</span>
+                    </div>
+                    <div class="segment-card-desc">${esc(segText)}</div>
                   </div>
-                  <div style="font-size:11px; line-height:1.35;">${esc(seg.description || seg.text || '')}</div>
-                </div>
-              `).join("")}
+                `;
+              }).join("")}
             </div>
           `;
         } else {
@@ -761,16 +1081,16 @@
           },
           scales: {
             x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 10 } } },
-            y: { suggestedMin: 0, suggestedMax: 100, grid: { color: "#eef2f7" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Risk (0–100)", font: { size: 10 } } },
+            y: { suggestedMin: 0, suggestedMax: 100, grid: { color: "#27272a" }, ticks: { font: { size: 10 } }, title: { display: true, text: "Risk (0–100)", font: { size: 10 } } },
           },
           onClick: (_, els) => { if (els.length) { $("scrub-slider").value = els[0].index; onScrub(); } },
         },
       });
 
       $("diurnal-meta").innerHTML = `
-        <span class="tag peak" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:#fff1f2; color:#9f1239;"><i class="fa-solid fa-moon"></i> Riskiest ${pad(d.peak_hour)} (${d.hourly_risk[d.peak_hour].toFixed(1)})</span>
-        <span class="tag safe" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:#ecfdf5; color:#065f46;"><i class="fa-solid fa-sun"></i> Safest ${pad(d.safest_hour)} (${d.hourly_risk[d.safest_hour].toFixed(1)})</span>
-        <span class="tag" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:#f8fafc; border:1px solid #e2e8f0;"><i class="fa-solid fa-ruler"></i> ${fmtDist(d.length_m)}</span>`;
+        <span class="tag peak" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:rgba(244,63,94,0.15); color:#fecdd3; border:1px solid rgba(244,63,94,0.3);"><i class="fa-solid fa-moon"></i> Riskiest ${pad(d.peak_hour)} (${d.hourly_risk[d.peak_hour].toFixed(1)})</span>
+        <span class="tag safe" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:rgba(16,185,129,0.15); color:#a7f3d0; border:1px solid rgba(16,185,129,0.3);"><i class="fa-solid fa-sun"></i> Safest ${pad(d.safest_hour)} (${d.hourly_risk[d.safest_hour].toFixed(1)})</span>
+        <span class="tag" style="font-size:11px; font-weight:600; padding:3px 8px; border-radius:999px; background:#18181b; border:1px solid #27272a; color:#e4e4e7;"><i class="fa-solid fa-ruler"></i> ${fmtDist(d.length_m)}</span>`;
       onScrub();
     }
 
@@ -828,7 +1148,7 @@
       $("drawer").style.transform = "translateX(0)";
       $("drawer").style.opacity = "1";
       $("drawer").style.pointerEvents = "auto";
-      $("drawer-body").innerHTML = '<div style="padding:20px 4px; color:#64748b;">Analysing safety factors at ' + pad(currentHour()) + "…</div>";
+      $("drawer-body").innerHTML = '<div style="padding:20px 4px; color:#8b8b93;">Analysing safety factors at ' + pad(currentHour()) + "…</div>";
       if (radarChart) { radarChart.destroy(); radarChart = null; }
 
       try {
@@ -837,7 +1157,7 @@
         renderInspection(d);
       } catch (e) {
         if (seq !== S.inspectSeq) return;
-        $("drawer-body").innerHTML = `<div style="padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;color:#92400e;">${esc(e.message)}</div>`;
+        $("drawer-body").innerHTML = `<div style="padding:12px;background:rgba(244,63,94,0.1);border:1px solid #f43f5e;border-radius:10px;color:#fecdd3;">${esc(e.message)}</div>`;
       }
     }
 
@@ -855,20 +1175,20 @@
           <div style="width:64px; height:64px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:22px; background:${col};">${Math.round(score)}</div>
           <div>
             <div style="font-weight:800; font-size:15px; color:${col}; text-transform:uppercase;">${esc(d.risk_band || "")}</div>
-            <div style="color:#64748b; font-size:11.5px; line-height:1.4;">Local risk score at ${pad(currentHour())}${street ? `<br>Street: <b>${esc(street)}</b>` : ""}</div>
+            <div style="color:#8b8b93; font-size:11.5px; line-height:1.4;">Local risk score at ${pad(currentHour())}${street ? `<br>Street: <b>${esc(street)}</b>` : ""}</div>
           </div>
         </div>
-        <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin:10px 0 4px;">CPTED safety factors (outer = safer)</div>
+        <div style="font-size:11px; font-weight:700; color:#8b8b93; text-transform:uppercase; margin:10px 0 4px;">CPTED safety factors (outer = safer)</div>
         <div style="position:relative; height:210px;"><canvas id="radar-chart"></canvas></div>
-        <div style="font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; margin:10px 0 4px;">Closest safe havens</div>
+        <div style="font-size:11px; font-weight:700; color:#8b8b93; text-transform:uppercase; margin:10px 0 4px;">Closest safe havens</div>
         <div id="haven-list">
           ${havens.length ? havens.map((h, i) => `
-            <div class="haven" data-i="${i}">
+            <div class="haven" data-i="${i}" style="display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid #27272a; border-radius:6px; margin-bottom:4px; background:#111114;">
               <div class="ic ${havenKind(h.type)}"><i class="fa-solid ${havenKind(h.type) === "police" ? "fa-shield" : "fa-store"}"></i></div>
-              <div><div class="nm">${esc(h.name)}</div><div class="ty">${esc(h.type)}</div></div>
-              <div class="ds">${fmtDist(h.distance_m ?? h.dist_m ?? 0)}</div>
+              <div><div class="nm" style="font-weight:600; font-size:12px; color:#e4e4e7;">${esc(h.name)}</div><div class="ty" style="font-size:10px; color:#8b8b93;">${esc(h.type)}</div></div>
+              <div class="ds" style="margin-left:auto; font-weight:700; font-size:11px; color:#06b6d4;">${fmtDist(h.distance_m ?? h.dist_m ?? 0)}</div>
             </div>
-          `).join("") : '<div style="font-size:11.5px;color:#64748b;padding:6px 0;">No police station or 24/7 shop within range.</div>'}
+          `).join("") : '<div style="font-size:11.5px;color:#8b8b93;padding:6px 0;">No police station or 24/7 shop within range.</div>'}
         </div>
         <div class="row">
           <button class="secondary" id="use-origin" type="button"><i class="fa-solid fa-circle-dot"></i> Use as origin</button>
@@ -882,12 +1202,12 @@
         type: "radar",
         data: {
           labels: RADAR_LABELS,
-          datasets: [{ label: "Safety factors", data: vals, backgroundColor: "rgba(59,130,246,0.22)", borderColor: "#3B82F6", borderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#3B82F6", pointRadius: 4 }],
+          datasets: [{ label: "Safety factors", data: vals, backgroundColor: "rgba(6,182,212,0.2)", borderColor: "#06b6d4", borderWidth: 2.5, pointBackgroundColor: "#fff", pointBorderColor: "#06b6d4", pointRadius: 4 }],
         },
         options: {
           responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false } },
-          scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.25, display: false }, pointLabels: { font: { size: 10.5, weight: "600" }, color: "#334155" } } },
+          scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.25, display: false }, grid: { color: "#27272a" }, angleLines: { color: "#27272a" }, pointLabels: { font: { size: 10.5, weight: "600" }, color: "#a1a1aa" } } },
         },
       });
 
